@@ -2,6 +2,27 @@
 import { useState } from "react";
 export default function ReviewCard(props: {review: string}) {
     const [reply, setReply] = useState("");
+async function handleGenerateReply() {
+    const response = await fetch(
+        "http://127.0.0.1:8000/generate-reply",
+        {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                review: props.review,
+            }),
+        }
+    );
+
+    console.log(response.status);
+
+    const data = await response.json();
+    console.log(data);
+
+    setReply(data.reply);
+}
   return (
     <div className="max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <h2 className="text-xl font-bold text-yellow-300">★★★★★</h2>
@@ -25,12 +46,9 @@ export default function ReviewCard(props: {review: string}) {
 
         <button
         
-  className="rounded-lg bg-blue-600 px-4 py-2 text-white"
-  onClick={() =>
-    setReply(
-      "Thank you for your kind words. We truly appreciate your feedback!"
-    )
-}>
+           className="rounded-lg bg-blue-600 px-4 py-2 text-white"
+           onClick={handleGenerateReply}
+  >
       Generate reply
 
   
