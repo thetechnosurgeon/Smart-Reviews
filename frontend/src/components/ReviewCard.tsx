@@ -49,16 +49,13 @@ async function handleGenerateReply() {
         </button>
 
         <button
-        
-           className="rounded-lg bg-blue-600 px-4 py-2 text-white"
-           onClick={handleGenerateReply}
-           disabled={isLoading}
-           className={`rounded-lg px-4 py-2 text-white ${
-  isLoading ? "bg-blue-200" : "bg-blue-600"
-}`}
-  >
-          {isLoading ? "Generating..." : "Generate reply"}
-  
+  onClick={handleGenerateReply}
+  disabled={isLoading}
+  className={`rounded-lg px-4 py-2 text-white ${
+    isLoading ? "bg-gray-400" : "bg-blue-600"
+  }`}
+>
+  {isLoading ? "Generating..." : "Generate reply"}
 </button>
       </div>
     </div>
