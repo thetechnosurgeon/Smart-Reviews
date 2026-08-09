@@ -30,7 +30,7 @@ def generate_reply(data: ReviewRequest):
             "model": "gemma3:1b",
             "prompt": (
                 "Write a short, warm, professional reply to this patient review. "
-                "Do not invent facts. Keep it under 60 words.\n\n"
+                "Do not invent facts. Keep it under 60 words. dont include placeholders. \n\n"
                 f"Review: {data.review}"
             ),
             "stream": False,

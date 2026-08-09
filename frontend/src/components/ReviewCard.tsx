@@ -2,7 +2,10 @@
 import { useState } from "react";
 export default function ReviewCard(props: {review: string}) {
     const [reply, setReply] = useState("");
+    const [isLoading, setIsLoading] = useState(false);
+    
 async function handleGenerateReply() {
+     setIsLoading(true);
     const response = await fetch(
         "http://127.0.0.1:8000/generate-reply",
         {
@@ -22,6 +25,7 @@ async function handleGenerateReply() {
     console.log(data);
 
     setReply(data.reply);
+    setIsLoading(false);
 }
   return (
     <div className="max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -48,9 +52,12 @@ async function handleGenerateReply() {
         
            className="rounded-lg bg-blue-600 px-4 py-2 text-white"
            onClick={handleGenerateReply}
+           disabled={isLoading}
+           className={`rounded-lg px-4 py-2 text-white ${
+  isLoading ? "bg-blue-200" : "bg-blue-600"
+}`}
   >
-      Generate reply
-
+          {isLoading ? "Generating..." : "Generate reply"}
   
 </button>
       </div>
