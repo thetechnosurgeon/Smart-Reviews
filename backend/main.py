@@ -65,3 +65,26 @@ def google_login():
     auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
 
     return RedirectResponse(auth_url)
+@app.get("/auth/google/callback")
+def google_callback(code: str):
+
+    token_response = requests.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "code": code,
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "redirect_uri": GOOGLE_REDIRECT_URI,
+            "grant_type": "authorization_code",
+        },
+    )
+
+   tokens = token_response.json()
+
+    if token_response.status_code != 200:
+    return {
+        "error": "Token exchange failed",
+        "details": tokens,
+    }
+
+    return tokens
