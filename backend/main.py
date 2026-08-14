@@ -65,9 +65,3 @@ def google_login():
     auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
 
     return RedirectResponse(auth_url)
-@app.get("/debug-google")
-def debug_google():
-    return {
-        "client_id": GOOGLE_CLIENT_ID,
-        "redirect_uri": GOOGLE_REDIRECT_URI,
-    }
