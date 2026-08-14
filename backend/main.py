@@ -2,9 +2,16 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import requests
+import os
+from fastapi.responses import RedirectResponse
 
 app = FastAPI()
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 
+GOOGLE_REDIRECT_URI = "https://smart-reviews.onrender.com/auth/google/callback"
+
+GOOGLE_SCOPE = "https://www.googleapis.com/auth/business.manage"
 
 app.add_middleware(
     CORSMiddleware,
@@ -42,4 +49,17 @@ def generate_reply(data: ReviewRequest):
     return {
         "reply": result["response"]
     }
+@app.get("/auth/google")
+def google_login():
 
+    auth_url = (
+        "https://accounts.google.com/o/oauth2/v2/auth"
+        f"?client_id={GOOGLE_CLIENT_ID}"
+        f"&redirect_uri={GOOGLE_REDIRECT_URI}"
+        "&response_type=code"
+        f"&scope={GOOGLE_SCOPE}"
+        "&access_type=offline"
+        "&prompt=consent"
+    )
+
+    return RedirectResponse(auth_url)
