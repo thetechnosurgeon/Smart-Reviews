@@ -7,8 +7,8 @@ from urllib.parse import urlencode
 from fastapi.responses import RedirectResponse
 
 app = FastAPI()
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
 
 GOOGLE_REDIRECT_URI = "https://smart-reviews.onrender.com/auth/google/callback"
 
