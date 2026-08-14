@@ -79,12 +79,12 @@ def google_callback(code: str):
         },
     )
 
-   tokens = token_response.json()
+    tokens = token_response.json()
 
     if token_response.status_code != 200:
-    return {
-        "error": "Token exchange failed",
-        "details": tokens,
-    }
+        return {
+            "error": "Token exchange failed",
+            "details": tokens,
+        }
 
     return tokens
