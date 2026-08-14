@@ -68,6 +68,6 @@ def google_login():
 @app.get("/debug-google")
 def debug_google():
     return {
-        "client_id_last_20": GOOGLE_CLIENT_ID[-20:] if GOOGLE_CLIENT_ID else None,
+        "client_id": GOOGLE_CLIENT_ID,
         "redirect_uri": GOOGLE_REDIRECT_URI,
     }
