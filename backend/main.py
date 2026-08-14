@@ -63,3 +63,4 @@ def google_login():
     )
 
     return RedirectResponse(auth_url)
+print("GOOGLE_CLIENT_ID:", GOOGLE_CLIENT_ID)
