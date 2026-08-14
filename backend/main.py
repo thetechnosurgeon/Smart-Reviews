@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import requests
 import os
+from urllib.parse import urlencode
 from fastapi.responses import RedirectResponse
 
 app = FastAPI()
@@ -52,14 +53,15 @@ def generate_reply(data: ReviewRequest):
 @app.get("/auth/google")
 def google_login():
 
-    auth_url = (
-        "https://accounts.google.com/o/oauth2/v2/auth"
-        f"?client_id={GOOGLE_CLIENT_ID}"
-        f"&redirect_uri={GOOGLE_REDIRECT_URI}"
-        "&response_type=code"
-        f"&scope={GOOGLE_SCOPE}"
-        "&access_type=offline"
-        "&prompt=consent"
-    )
+    params = {
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": GOOGLE_REDIRECT_URI,
+        "response_type": "code",
+        "scope": "https://www.googleapis.com/auth/business.manage",
+        "access_type": "offline",
+        "prompt": "consent",
+    }
+
+    auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
 
     return RedirectResponse(auth_url)
