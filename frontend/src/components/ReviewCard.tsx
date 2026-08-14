@@ -7,7 +7,7 @@ export default function ReviewCard(props: {review: string}) {
 async function handleGenerateReply() {
      setIsLoading(true);
     const response = await fetch(
-        ""https://smart-reviews.onrender.com/generate-reply",
+        "https://smart-reviews.onrender.com/generate-reply",
         {
             method: "POST",
             headers: {
