@@ -86,5 +86,8 @@ def google_callback(code: str):
             "error": "Token exchange failed",
             "details": tokens,
         }
-
-    return tokens
+    return {
+    "message": "Google account connected successfully",
+    "has_access_token": "access_token" in tokens,
+    "has_refresh_token": "refresh_token" in tokens,
+}
