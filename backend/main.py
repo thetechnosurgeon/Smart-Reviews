@@ -5,6 +5,7 @@ import requests
 import os
 from urllib.parse import urlencode
 from fastapi.responses import RedirectResponse
+google_tokens = {}
 
 app = FastAPI()
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
@@ -81,13 +82,29 @@ def google_callback(code: str):
 
     tokens = token_response.json()
 
+    google_tokens["access_token"] = tokens.get("access_token")
+    google_tokens["refresh_token"] = tokens.get("refresh_token")
+
     if token_response.status_code != 200:
         return {
             "error": "Token exchange failed",
             "details": tokens,
         }
-    return {
-    "message": "Google account connected successfully",
-    "has_access_token": "access_token" in tokens,
-    "has_refresh_token": "refresh_token" in tokens,
-}
+    google_tokens["access_token"] = tokens.get("access_token")
+    google_tokens["refresh_token"] = tokens.get("refresh_token")
+@app.get("/google/accounts")
+def get_google_accounts():
+
+    access_token = google_tokens.get("access_token")
+
+    if not access_token:
+        return {"error": "Google account not connected"}
+
+    response = requests.get(
+        "https://mybusinessaccountmanagement.googleapis.com/v1/accounts",
+        headers={
+            "Authorization": f"Bearer {access_token}"
+        },
+    )
+
+    return response.json()    
