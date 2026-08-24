@@ -89,7 +89,8 @@ def get_reviews():
 
 
 client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY")
+    api_key=os.getenv("GROQ_API_KEY"),
+    base_url="https://api.groq.com/openai/v1",
 )
 
 
@@ -97,7 +98,7 @@ client = OpenAI(
 def generate_reply(data: ReviewRequest):
     try:
         response = client.responses.create(
-            model="gpt-5.6-luna",
+            model="openai/gpt-oss-20b",
             input=(
                 "Write a short, warm, professional reply "
                 "to this customer review. "
