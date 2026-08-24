@@ -95,25 +95,28 @@ client = OpenAI(
 
 @app.post("/generate-reply")
 def generate_reply(data: ReviewRequest):
+    try:
+        response = client.responses.create(
+            model="gpt-5.6-luna",
+            input=(
+                "Write a short, warm, professional reply "
+                "to this customer review. "
+                "Do not invent facts. "
+                "Keep it under 60 words. "
+                "Do not include placeholders. "
+                "Return only the reply text.\n\n"
+                f"Review: {data.review}"
+            ),
+        )
 
-    response = client.responses.create(
-        model="gpt-5.6-luna",
-        input=(
-            "Write a short, warm, professional reply "
-            "to this customer review. "
-            "Do not invent facts. "
-            "Keep it under 60 words. "
-            "Do not include placeholders. "
-            "Return only the reply text.\n\n"
-            f"Review: {data.review}"
-        ),
-    )
+        return {
+            "reply": response.output_text
+        }
 
-    return {
-        "reply": response.output_text
-    }
-
-
+    except Exception as e:
+        return {
+            "error": str(e)
+        }
 
 @app.post("/approve-reply")
 def approve_reply(data: ApproveRequest):
