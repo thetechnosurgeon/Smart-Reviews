@@ -128,14 +128,60 @@ def approve_reply(data: ApproveRequest):
     }
 
 
+class PostReplyRequest(BaseModel):
+    account_id: str
+    location_id: str
+    review_id: str
+    reply: str
+
+
 @app.post("/post-reply")
 def post_reply(data: PostReplyRequest):
+
+    # Temporary demo mode while Google API access is pending
+    if not data.account_id or not data.location_id:
+        return {
+            "status": "posted",
+            "review_id": data.review_id,
+            "mode": "demo",
+        }
+
+    access_token = google_tokens.get("access_token")
+
+    if not access_token:
+        return {
+            "error": "Google account not connected"
+        }
+
+    response = requests.put(
+        (
+            "https://mybusiness.googleapis.com/v4/"
+            f"accounts/{data.account_id}/"
+            f"locations/{data.location_id}/"
+            f"reviews/{data.review_id}/reply"
+        ),
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "comment": data.reply
+        },
+    )
+
+    result = response.json()
+
+    if response.status_code != 200:
+        return {
+            "error": "Google reply failed",
+            "details": result,
+        }
+
     return {
         "status": "posted",
         "review_id": data.review_id,
-        "reply": data.reply,
+        "mode": "google",
     }
-
 
 @app.get("/auth/google")
 def google_login():

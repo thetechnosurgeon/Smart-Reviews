@@ -13,6 +13,11 @@ export default function Home() {
   const API_URL =
     process.env.NEXT_PUBLIC_API_URL ||
     "http://127.0.0.1:8000";
+  const GOOGLE_ACCOUNT_ID =
+  process.env.NEXT_PUBLIC_GOOGLE_ACCOUNT_ID || "";
+
+  const GOOGLE_LOCATION_ID =
+  process.env.NEXT_PUBLIC_GOOGLE_LOCATION_ID || "";
 
   const [reviews, setReviews] = useState<Review[]>([]);
   const [replies, setReplies] = useState<{ [key: string]: string }>({});
@@ -135,7 +140,9 @@ export default function Home() {
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({
-                review_id: review.id,
+                account_id: GOOGLE_ACCOUNT_ID,
+                location_id: GOOGLE_LOCATION_ID,
+                 review_id: review.id,
                 reply: replies[review.id],
               }),
             }
