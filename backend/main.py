@@ -1,34 +1,80 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
+
 import requests
 import os
+
 from urllib.parse import urlencode
-from fastapi.responses import RedirectResponse
-google_tokens = {}
+
 
 app = FastAPI()
+
+google_tokens = {}
+
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
 
-GOOGLE_REDIRECT_URI = "https://smart-reviews.onrender.com/auth/google/callback"
+GOOGLE_REDIRECT_URI = (
+    "https://smart-reviews.onrender.com/auth/google/callback"
+)
 
-GOOGLE_SCOPE = "https://www.googleapis.com/auth/business.manage"
+GOOGLE_SCOPE = (
+    "https://www.googleapis.com/auth/business.manage"
+)
+
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
 class ReviewRequest(BaseModel):
-    review:str
+    review: str
+
+
+class ApproveRequest(BaseModel):
+    review_id: str
+    reply: str
+
 
 @app.get("/")
 def home():
-    return{"message":"our ai copilot backend is alive"}
+    return {
+        "message": "Our AI copilot backend is alive"
+    }
+
+@app.get("/reviews")
+def get_reviews():
+    return {
+        "reviews": [
+            {
+                "id": "1",
+                "reviewer": "Rahul",
+                "rating": 5,
+                "review": "Excellent care and very helpful staff.",
+            },
+            {
+                "id": "2",
+                "reviewer": "Priya",
+                "rating": 4,
+                "review": "Good experience overall, but the waiting time was a little long.",
+            },
+            {
+                "id": "3",
+                "reviewer": "Arjun",
+                "rating": 5,
+                "review": "The doctor explained everything clearly and the staff was kind.",
+            },
+        ]
+    }
 
 @app.post("/generate-reply")
 def generate_reply(data: ReviewRequest):
@@ -38,8 +84,11 @@ def generate_reply(data: ReviewRequest):
         json={
             "model": "gemma3:1b",
             "prompt": (
-                "Write a short, warm, professional reply to this patient review. "
-                "Do not invent facts. Keep it under 60 words. dont include placeholders. \n\n"
+                "Write a short, warm, professional reply "
+                "to this patient review. "
+                "Do not invent facts. "
+                "Keep it under 60 words. "
+                "Do not include placeholders.\n\n"
                 f"Review: {data.review}"
             ),
             "stream": False,
@@ -51,21 +100,51 @@ def generate_reply(data: ReviewRequest):
     return {
         "reply": result["response"]
     }
+
+
+@app.post("/approve-reply")
+def approve_reply(data: ApproveRequest):
+
+    return {
+        "status": "approved",
+        "review_id": data.review_id,
+        "reply": data.reply,
+    }
+
+class PostReplyRequest(BaseModel):
+    review_id: str
+    reply: str
+
+
+@app.post("/post-reply")
+def post_reply(data: PostReplyRequest):
+    return {
+        "status": "posted",
+        "review_id": data.review_id,
+        "reply": data.reply,
+    } 
+
+
 @app.get("/auth/google")
 def google_login():
 
     params = {
-        "client_id": GOOGLE_CLIENT_ID, 
-        "redirect_uri": GOOGLE_REDIRECT_URI, 
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": GOOGLE_REDIRECT_URI,
         "response_type": "code",
-        "scope": "https://www.googleapis.com/auth/business.manage",
+        "scope": GOOGLE_SCOPE,
         "access_type": "offline",
         "prompt": "consent",
     }
 
-    auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
+    auth_url = (
+        "https://accounts.google.com/o/oauth2/v2/auth?"
+        + urlencode(params)
+    )
 
     return RedirectResponse(auth_url)
+
+
 @app.get("/auth/google/callback")
 def google_callback(code: str):
 
@@ -82,18 +161,102 @@ def google_callback(code: str):
 
     tokens = token_response.json()
 
-    google_tokens["access_token"] = tokens.get("access_token")
-    google_tokens["refresh_token"] = tokens.get("refresh_token")
-
     if token_response.status_code != 200:
         return {
             "error": "Token exchange failed",
             "details": tokens,
         }
-    google_tokens["access_token"] = tokens.get("access_token")
-    google_tokens["refresh_token"] = tokens.get("refresh_token")
+
+    google_tokens["access_token"] = tokens.get(
+        "access_token"
+    )
+
+    google_tokens["refresh_token"] = tokens.get(
+        "refresh_token"
+    )
+
+    return {
+        "message": "Google account connected successfully",
+        "has_access_token": bool(
+            google_tokens["access_token"]
+        ),
+        "has_refresh_token": bool(
+            google_tokens["refresh_token"]
+        ),
+    }
+
+
 @app.get("/google/accounts")
 def get_google_accounts():
+
+    access_token = google_tokens.get(
+        "access_token"
+    )
+
+    if not access_token:
+        return {
+            "error": "Google account not connected"
+        }
+
+    response = requests.get(
+        (
+            "https://"
+            "mybusinessaccountmanagement.googleapis.com/"
+            "v1/accounts"
+        ),
+        headers={
+            "Authorization": f"Bearer {access_token}"
+        },
+    )
+
+    return response.json()
+
+@app.get("/google/locations/{account_id}")
+def get_google_locations(account_id: str):
+
+    access_token = google_tokens.get("access_token")
+
+    if not access_token:
+        return {
+            "error": "Google account not connected"
+        }
+
+    response = requests.get(
+        f"https://mybusinessbusinessinformation.googleapis.com/v1/accounts/{account_id}/locations",
+        headers={
+            "Authorization": f"Bearer {access_token}"
+        },
+        params={
+            "readMask": "name,title,storefrontAddress"
+        },
+    )
+
+    return response.json()
+
+@app.get("/google/reviews/{account_id}/{location_id}")
+def get_google_reviews(account_id: str, location_id: str):
+
+    access_token = google_tokens.get("access_token")
+
+    if not access_token:
+        return {
+            "error": "Google account not connected"
+        }
+
+    response = requests.get(
+        f"https://mybusiness.googleapis.com/v4/accounts/{account_id}/locations/{location_id}/reviews",
+        headers={
+            "Authorization": f"Bearer {access_token}"
+        },
+        params={
+            "pageSize": 50
+        },
+    )
+
+    return response.json()
+
+@app.get("/reviews/{account_id}/{location_id}")
+def get_reviews_for_dashboard(account_id: str, location_id: str):
 
     access_token = google_tokens.get("access_token")
 
@@ -101,10 +264,33 @@ def get_google_accounts():
         return {"error": "Google account not connected"}
 
     response = requests.get(
-        "https://mybusinessaccountmanagement.googleapis.com/v1/accounts",
+        f"https://mybusiness.googleapis.com/v4/accounts/{account_id}/locations/{location_id}/reviews",
         headers={
             "Authorization": f"Bearer {access_token}"
         },
+        params={
+            "pageSize": 50
+        },
     )
 
-    return response.json()    
+    data = response.json()
+
+    if response.status_code != 200:
+        return data
+
+    formatted_reviews = []
+
+    for review in data.get("reviews", []):
+        formatted_reviews.append({
+            "id": review.get("reviewId"),
+            "reviewer": review.get("reviewer", {}).get(
+                "displayName",
+                "Anonymous"
+            ),
+            "rating": review.get("starRating"),
+            "review": review.get("comment", ""),
+        })
+
+    return {
+        "reviews": formatted_reviews
+    }
