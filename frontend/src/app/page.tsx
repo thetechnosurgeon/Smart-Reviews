@@ -12,12 +12,13 @@ type Review = {
 export default function Home() {
   const API_URL =
     process.env.NEXT_PUBLIC_API_URL ||
-    "http://127.0.0.1:8000";
+    "https://smart-reviews.onrender.com";
+
   const GOOGLE_ACCOUNT_ID =
-  process.env.NEXT_PUBLIC_GOOGLE_ACCOUNT_ID || "";
+    process.env.NEXT_PUBLIC_GOOGLE_ACCOUNT_ID || "";
 
   const GOOGLE_LOCATION_ID =
-  process.env.NEXT_PUBLIC_GOOGLE_LOCATION_ID || "";
+    process.env.NEXT_PUBLIC_GOOGLE_LOCATION_ID || "";
 
   const [reviews, setReviews] = useState<Review[]>([]);
   const [replies, setReplies] = useState<{ [key: string]: string }>({});
@@ -30,7 +31,6 @@ export default function Home() {
     async function loadReviews() {
       try {
         const response = await fetch(`${API_URL}/reviews`);
-
         const data = await response.json();
 
         setReviews(data.reviews || []);
@@ -132,21 +132,18 @@ export default function Home() {
     for (const review of reviews) {
       if (statuses[review.id] === "approved") {
         try {
-          await fetch(
-            `${API_URL}/post-reply`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                account_id: GOOGLE_ACCOUNT_ID,
-                location_id: GOOGLE_LOCATION_ID,
-                 review_id: review.id,
-                reply: replies[review.id],
-              }),
-            }
-          );
+          await fetch(`${API_URL}/post-reply`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              account_id: GOOGLE_ACCOUNT_ID,
+              location_id: GOOGLE_LOCATION_ID,
+              review_id: review.id,
+              reply: replies[review.id],
+            }),
+          });
 
           setStatuses((old) => ({
             ...old,
@@ -206,17 +203,18 @@ export default function Home() {
           </p>
         </div>
 
-        <div>
-           <button
-          onClick={() => {
-            window.location.href = "https://smartreviews-mcjc.onrender.com/auth/google";
-  }}
->
-  Connect Google Business Profile
-</button>
+        <div className="mt-10">
+          <button
+            onClick={() => {
+              window.location.href = `${API_URL}/auth/google`;
+            }}
+            className="border border-black/20 px-6 py-3 text-sm font-medium transition hover:bg-[#171a20] hover:text-white"
+          >
+            Connect Google Business Profile
+          </button>
         </div>
 
-        <div className="mt-12 flex flex-wrap gap-3">
+        <div className="mt-6 flex flex-wrap gap-3">
           <button
             onClick={generateAllReplies}
             disabled={generatingAll || reviews.length === 0}
@@ -243,25 +241,10 @@ export default function Home() {
 
       <section className="border-y border-black/10 bg-[#f5f5f5]">
         <div className="mx-auto grid max-w-7xl grid-cols-2 md:grid-cols-4">
-          <Stat
-            label="Reviews"
-            value={reviews.length}
-          />
-
-          <Stat
-            label="Drafted"
-            value={draftedCount}
-          />
-
-          <Stat
-            label="Approved"
-            value={approvedCount}
-          />
-
-          <Stat
-            label="Posted"
-            value={postedCount}
-          />
+          <Stat label="Reviews" value={reviews.length} />
+          <Stat label="Drafted" value={draftedCount} />
+          <Stat label="Approved" value={approvedCount} />
+          <Stat label="Posted" value={postedCount} />
         </div>
       </section>
 
@@ -314,14 +297,10 @@ export default function Home() {
                   </p>
 
                   <div className="mt-5 text-sm tracking-[0.08em]">
-                    {"★".repeat(
-                      Number(review.rating)
-                    )}
+                    {"★".repeat(Number(review.rating))}
 
                     <span className="text-black/15">
-                      {"★".repeat(
-                        5 - Number(review.rating)
-                      )}
+                      {"★".repeat(5 - Number(review.rating))}
                     </span>
                   </div>
                 </div>
@@ -360,9 +339,7 @@ export default function Home() {
                         </p>
 
                         <StatusBadge
-                          status={
-                            statuses[review.id]
-                          }
+                          status={statuses[review.id]}
                         />
                       </div>
 
@@ -371,8 +348,7 @@ export default function Home() {
                         onChange={(e) =>
                           setReplies((old) => ({
                             ...old,
-                            [review.id]:
-                              e.target.value,
+                            [review.id]: e.target.value,
                           }))
                         }
                         className="min-h-36 w-full resize-y border border-black/15 bg-white p-5 text-base leading-7 outline-none transition focus:border-black"
@@ -396,8 +372,7 @@ export default function Home() {
                           onClick={() =>
                             setStatuses((old) => ({
                               ...old,
-                              [review.id]:
-                                "skipped",
+                              [review.id]: "skipped",
                             }))
                           }
                           disabled={
