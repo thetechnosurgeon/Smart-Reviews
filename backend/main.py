@@ -279,15 +279,9 @@ def google_callback(code: str):
         "refresh_token"
     )
 
-    return {
-        "message": "Google account connected successfully",
-        "has_access_token": bool(
-            google_tokens["access_token"]
-        ),
-        "has_refresh_token": bool(
-            google_tokens["refresh_token"]
-        ),
-    }
+    return RedirectResponse(
+    "https://smartreviews-mcjc.onrender.com/?connected=true"
+    )
 
 
 # --------------------------------------------------
