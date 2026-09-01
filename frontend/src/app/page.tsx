@@ -206,6 +206,16 @@ export default function Home() {
           </p>
         </div>
 
+        <div>
+           <button
+          onClick={() => {
+            window.location.href = "https://smartreviews-mcjc.onrender.com/auth/google";
+  }}
+>
+  Connect Google Business Profile
+</button>
+        </div>
+
         <div className="mt-12 flex flex-wrap gap-3">
           <button
             onClick={generateAllReplies}
