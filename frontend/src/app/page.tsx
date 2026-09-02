@@ -18,29 +18,39 @@ type Filter =
   | "approved"
   | "posted";
 
+type RatingFilter =
+  | "all"
+  | 1
+  | 2
+  | 3
+  | 4
+  | 5;
+
 export default function Home() {
   const API_URL =
     process.env.NEXT_PUBLIC_API_URL ||
     "https://smart-reviews.onrender.com";
 
   const [reviews, setReviews] = useState<Review[]>([]);
-  const [replies, setReplies] = useState<{
-    [key: string]: string;
-  }>({});
+  const [replies, setReplies] = useState<Record<string, string>>({});
+  const [statuses, setStatuses] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const [statuses, setStatuses] = useState<{
-    [key: string]: string;
-  }>({});
-
-  const [errors, setErrors] = useState<{
-    [key: string]: string;
-  }>({});
+  const [selected, setSelected] = useState<Set<string>>(
+    new Set()
+  );
 
   const [loadingReviews, setLoadingReviews] =
     useState(true);
 
   const [generatingAll, setGeneratingAll] =
     useState(false);
+
+  const [generationProgress, setGenerationProgress] =
+    useState({
+      current: 0,
+      total: 0,
+    });
 
   const [posting, setPosting] =
     useState(false);
@@ -60,6 +70,9 @@ export default function Home() {
   const [filter, setFilter] =
     useState<Filter>("all");
 
+  const [ratingFilter, setRatingFilter] =
+    useState<RatingFilter>("all");
+
   useEffect(() => {
     const params = new URLSearchParams(
       window.location.search
@@ -76,21 +89,6 @@ export default function Home() {
     }
   }, []);
 
-  async function readJson(response: Response) {
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(
-        data?.error?.message ||
-          data?.error ||
-          data?.detail ||
-          "Request failed"
-      );
-    }
-
-    return data;
-  }
-
   function getErrorMessage(
     value: unknown,
     fallback: string
@@ -106,16 +104,31 @@ export default function Home() {
     return fallback;
   }
 
+  function resetWorkflow() {
+    setReplies({});
+    setStatuses({});
+    setErrors({});
+    setSelected(new Set());
+  }
+
   async function loadDemoReviews() {
     setLoadingReviews(true);
     setGoogleError("");
+    resetWorkflow();
 
     try {
       const response = await fetch(
         `${API_URL}/reviews`
       );
 
-      const data = await readJson(response);
+      const data = await response.json();
+
+      if (!response.ok || data.error) {
+        throw new Error(
+          data.error ||
+            "Unable to load reviews."
+        );
+      }
 
       setReviews(
         data.reviews || []
@@ -137,6 +150,7 @@ export default function Home() {
   async function loadGoogleReviews() {
     setLoadingReviews(true);
     setGoogleError("");
+    resetWorkflow();
 
     try {
       const accountResponse = await fetch(
@@ -147,14 +161,11 @@ export default function Home() {
         await accountResponse.json();
 
       if (accountData.error) {
-        const detail =
+        throw new Error(
           accountData.error?.message ||
           accountData.error?.error?.message ||
-          JSON.stringify(
-            accountData.error
-          );
-
-        throw new Error(detail);
+          JSON.stringify(accountData.error)
+        );
       }
 
       if (!accountData.accounts?.length) {
@@ -163,18 +174,13 @@ export default function Home() {
         );
       }
 
-      const accountName =
-        accountData.accounts[0].name;
-
       const accountId =
-        accountName.replace(
+        accountData.accounts[0].name.replace(
           "accounts/",
           ""
         );
 
-      setGoogleAccountId(
-        accountId
-      );
+      setGoogleAccountId(accountId);
 
       const locationResponse = await fetch(
         `${API_URL}/google/locations/${accountId}`
@@ -184,14 +190,11 @@ export default function Home() {
         await locationResponse.json();
 
       if (locationData.error) {
-        const detail =
+        throw new Error(
           locationData.error?.message ||
           locationData.error?.error?.message ||
-          JSON.stringify(
-            locationData.error
-          );
-
-        throw new Error(detail);
+          JSON.stringify(locationData.error)
+        );
       }
 
       if (!locationData.locations?.length) {
@@ -200,18 +203,13 @@ export default function Home() {
         );
       }
 
-      const locationName =
-        locationData.locations[0].name;
-
       const locationId =
-        locationName.replace(
+        locationData.locations[0].name.replace(
           "locations/",
           ""
         );
 
-      setGoogleLocationId(
-        locationId
-      );
+      setGoogleLocationId(locationId);
 
       const reviewResponse = await fetch(
         `${API_URL}/reviews/${accountId}/${locationId}`
@@ -221,41 +219,30 @@ export default function Home() {
         await reviewResponse.json();
 
       if (reviewData.error) {
-        const detail =
+        throw new Error(
           reviewData.error?.message ||
           reviewData.error?.error?.message ||
-          JSON.stringify(
-            reviewData.error
-          );
-
-        throw new Error(detail);
+          JSON.stringify(reviewData.error)
+        );
       }
 
-      setReviews(
-        reviewData.reviews || []
-      );
+      const loadedReviews =
+        reviewData.reviews || [];
 
-      const initialStatuses: {
-        [key: string]: string;
-      } = {};
+      setReviews(loadedReviews);
 
-      for (
-        const review of
-        reviewData.reviews || []
-      ) {
+      const initialStatuses: Record<string, string> = {};
+
+      for (const review of loadedReviews) {
         if (review.has_reply) {
-          initialStatuses[
-            review.id
-          ] = "posted";
+          initialStatuses[review.id] =
+            "posted";
         }
       }
 
-      setStatuses(
-        initialStatuses
-      );
+      setStatuses(initialStatuses);
     } catch (error) {
       console.error(error);
-
       setReviews([]);
 
       setGoogleError(
@@ -270,19 +257,16 @@ export default function Home() {
   }
 
   async function generateReply(
-    reviewId: string,
-    reviewText: string,
-    rating: number,
-    reviewer: string
+    review: Review
   ) {
     setErrors((old) => ({
       ...old,
-      [reviewId]: "",
+      [review.id]: "",
     }));
 
     setStatuses((old) => ({
       ...old,
-      [reviewId]: "generating",
+      [review.id]: "generating",
     }));
 
     try {
@@ -295,9 +279,9 @@ export default function Home() {
               "application/json",
           },
           body: JSON.stringify({
-            review: reviewText,
-            rating,
-            reviewer,
+            review: review.review,
+            rating: review.rating,
+            reviewer: review.reviewer,
           }),
         }
       );
@@ -320,23 +304,22 @@ export default function Home() {
 
       setReplies((old) => ({
         ...old,
-        [reviewId]:
-          data.reply,
+        [review.id]: data.reply,
       }));
 
       setStatuses((old) => ({
         ...old,
-        [reviewId]: "draft",
+        [review.id]: "draft",
       }));
     } catch (error) {
       setStatuses((old) => ({
         ...old,
-        [reviewId]: "error",
+        [review.id]: "error",
       }));
 
       setErrors((old) => ({
         ...old,
-        [reviewId]:
+        [review.id]:
           getErrorMessage(
             error,
             "Reply generation failed."
@@ -345,41 +328,72 @@ export default function Home() {
     }
   }
 
-  async function generateAllReplies() {
+  async function generateReviews(
+    targetReviews: Review[]
+  ) {
+    const validTargets =
+      targetReviews.filter(
+        (review) =>
+          statuses[review.id] !== "posted"
+      );
+
+    if (!validTargets.length) {
+      return;
+    }
+
     setGeneratingAll(true);
 
-    for (const review of reviews) {
-      if (
-        statuses[review.id] ===
-        "posted"
-      ) {
-        continue;
-      }
+    setGenerationProgress({
+      current: 0,
+      total: validTargets.length,
+    });
+
+    for (
+      let i = 0;
+      i < validTargets.length;
+      i++
+    ) {
+      setGenerationProgress({
+        current: i + 1,
+        total: validTargets.length,
+      });
 
       await generateReply(
-        review.id,
-        review.review,
-        review.rating,
-        review.reviewer
+        validTargets[i]
       );
     }
 
     setGeneratingAll(false);
   }
 
+  async function generateAllReplies() {
+    await generateReviews(
+      reviews
+    );
+  }
+
+  async function generateSelectedReplies() {
+    await generateReviews(
+      reviews.filter((review) =>
+        selected.has(review.id)
+      )
+    );
+  }
+
   async function approveReply(
     reviewId: string
   ) {
-    if (
-      !replies[reviewId]?.trim()
-    ) {
+    const reply =
+      replies[reviewId]?.trim();
+
+    if (!reply) {
       setErrors((old) => ({
         ...old,
         [reviewId]:
           "Reply cannot be empty.",
       }));
 
-      return;
+      return false;
     }
 
     try {
@@ -392,10 +406,8 @@ export default function Home() {
               "application/json",
           },
           body: JSON.stringify({
-            review_id:
-              reviewId,
-            reply:
-              replies[reviewId],
+            review_id: reviewId,
+            reply,
           }),
         }
       );
@@ -412,14 +424,15 @@ export default function Home() {
 
       setStatuses((old) => ({
         ...old,
-        [reviewId]:
-          "approved",
+        [reviewId]: "approved",
       }));
 
       setErrors((old) => ({
         ...old,
         [reviewId]: "",
       }));
+
+      return true;
     } catch (error) {
       setStatuses((old) => ({
         ...old,
@@ -434,6 +447,34 @@ export default function Home() {
             "Approval failed."
           ),
       }));
+
+      return false;
+    }
+  }
+
+  async function approveSelected() {
+    const ids = Array.from(
+      selected
+    );
+
+    for (const id of ids) {
+      if (
+        statuses[id] === "draft"
+      ) {
+        await approveReply(id);
+      }
+    }
+  }
+
+  async function approveAllDrafts() {
+    const draftIds =
+      Object.keys(statuses).filter(
+        (id) =>
+          statuses[id] === "draft"
+      );
+
+    for (const id of draftIds) {
+      await approveReply(id);
     }
   }
 
@@ -450,17 +491,34 @@ export default function Home() {
       return;
     }
 
+    const approvedReviews =
+      reviews.filter(
+        (review) =>
+          statuses[review.id] ===
+          "approved"
+      );
+
+    if (!approvedReviews.length) {
+      return;
+    }
+
+    const confirmed =
+      window.confirm(
+        `Post ${approvedReviews.length} approved repl${
+          approvedReviews.length === 1
+            ? "y"
+            : "ies"
+        } to Google Business Profile?\n\nThis action will publish them publicly.`
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
     setPosting(true);
     setGoogleError("");
 
-    for (const review of reviews) {
-      if (
-        statuses[review.id] !==
-        "approved"
-      ) {
-        continue;
-      }
-
+    for (const review of approvedReviews) {
       try {
         const response =
           await fetch(
@@ -497,8 +555,7 @@ export default function Home() {
           const detail =
             data.details?.error
               ?.message ||
-            data.details
-              ?.message ||
+            data.details?.message ||
             data.error ||
             "Posting failed";
 
@@ -552,26 +609,37 @@ export default function Home() {
     }));
   }
 
+  function toggleSelected(
+    reviewId: string
+  ) {
+    setSelected((old) => {
+      const next =
+        new Set(old);
+
+      if (next.has(reviewId)) {
+        next.delete(reviewId);
+      } else {
+        next.add(reviewId);
+      }
+
+      return next;
+    });
+  }
+
   const draftedCount =
-    Object.values(
-      statuses
-    ).filter(
+    Object.values(statuses).filter(
       (status) =>
         status === "draft"
     ).length;
 
   const approvedCount =
-    Object.values(
-      statuses
-    ).filter(
+    Object.values(statuses).filter(
       (status) =>
         status === "approved"
     ).length;
 
   const postedCount =
-    Object.values(
-      statuses
-    ).filter(
+    Object.values(statuses).filter(
       (status) =>
         status === "posted"
     ).length;
@@ -591,27 +659,60 @@ export default function Home() {
             review.id
           ];
 
-        if (
+        const statusMatches =
           filter === "all"
-        ) {
-          return true;
-        }
+            ? true
+            : filter ===
+              "unanswered"
+            ? status !== "posted"
+            : status === filter;
 
-        if (
-          filter ===
-          "unanswered"
-        ) {
-          return (
-            status !==
-            "posted"
-          );
-        }
+        const ratingMatches =
+          ratingFilter === "all"
+            ? true
+            : review.rating ===
+              ratingFilter;
 
         return (
-          status === filter
+          statusMatches &&
+          ratingMatches
         );
       }
     );
+
+  const selectableVisibleReviews =
+    visibleReviews.filter(
+      (review) =>
+        statuses[review.id] !==
+        "posted"
+    );
+
+  const allVisibleSelected =
+    selectableVisibleReviews.length >
+      0 &&
+    selectableVisibleReviews.every(
+      (review) =>
+        selected.has(review.id)
+    );
+
+  function toggleSelectAllVisible() {
+    setSelected((old) => {
+      const next =
+        new Set(old);
+
+      if (allVisibleSelected) {
+        for (const review of selectableVisibleReviews) {
+          next.delete(review.id);
+        }
+      } else {
+        for (const review of selectableVisibleReviews) {
+          next.add(review.id);
+        }
+      }
+
+      return next;
+    });
+  }
 
   return (
     <main className="min-h-screen bg-white text-[#171a20]">
@@ -691,11 +792,48 @@ export default function Home() {
               generatingAll ||
               reviews.length === 0
             }
-            className="bg-[#171a20] px-6 py-3 text-sm font-medium text-white transition hover:bg-black/80 disabled:cursor-not-allowed disabled:bg-black/20"
+            className="bg-[#171a20] px-6 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-black/20"
           >
             {generatingAll
-              ? "Generating..."
+              ? `Generating ${generationProgress.current}/${generationProgress.total}`
               : "Generate all replies"}
+          </button>
+
+          <button
+            onClick={
+              generateSelectedReplies
+            }
+            disabled={
+              generatingAll ||
+              selected.size === 0
+            }
+            className="border border-black/20 px-6 py-3 text-sm font-medium disabled:opacity-30"
+          >
+            Generate selected
+          </button>
+
+          <button
+            onClick={
+              approveSelected
+            }
+            disabled={
+              selected.size === 0
+            }
+            className="border border-black/20 px-6 py-3 text-sm font-medium disabled:opacity-30"
+          >
+            Approve selected
+          </button>
+
+          <button
+            onClick={
+              approveAllDrafts
+            }
+            disabled={
+              draftedCount === 0
+            }
+            className="border border-black/20 px-6 py-3 text-sm font-medium disabled:opacity-30"
+          >
+            Approve all drafts
           </button>
 
           <button
@@ -707,14 +845,15 @@ export default function Home() {
               approvedCount === 0 ||
               !googleConnected
             }
-            className="border border-black/20 px-6 py-3 text-sm font-medium transition hover:border-black hover:bg-[#171a20] hover:text-white disabled:cursor-not-allowed disabled:border-black/10 disabled:text-black/25"
+            className="border border-black/20 px-6 py-3 text-sm font-medium disabled:opacity-30"
           >
             {posting
               ? "Posting..."
-              : approvedCount >
-                0
-              ? `Post approved (${approvedCount})`
-              : "Post approved"}
+              : `Post approved${
+                  approvedCount
+                    ? ` (${approvedCount})`
+                    : ""
+                }`}
           </button>
         </div>
       </section>
@@ -723,51 +862,38 @@ export default function Home() {
         <div className="mx-auto grid max-w-7xl grid-cols-2 md:grid-cols-4">
           <Stat
             label="Reviews"
-            value={
-              reviews.length
-            }
+            value={reviews.length}
           />
-
           <Stat
             label="Drafts"
-            value={
-              draftedCount
-            }
+            value={draftedCount}
           />
-
           <Stat
             label="Approved"
-            value={
-              approvedCount
-            }
+            value={approvedCount}
           />
-
           <Stat
             label="Posted"
-            value={
-              postedCount
-            }
+            value={postedCount}
           />
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-6 py-16 md:px-10 md:py-20">
+      <section className="mx-auto max-w-7xl px-6 py-16 md:px-10">
         <div className="mb-8">
           <p className="text-xs font-medium uppercase tracking-[0.2em] text-black/35">
             Inbox
           </p>
 
-          <h2 className="mt-3 text-3xl font-medium tracking-[-0.03em]">
+          <h2 className="mt-3 text-3xl font-medium">
             Reviews
           </h2>
         </div>
 
-        <div className="mb-8 flex flex-wrap gap-2">
+        <div className="mb-5 flex flex-wrap gap-2">
           <FilterButton
             label={`All (${reviews.length})`}
-            active={
-              filter === "all"
-            }
+            active={filter === "all"}
             onClick={() =>
               setFilter("all")
             }
@@ -789,8 +915,7 @@ export default function Home() {
           <FilterButton
             label={`Drafts (${draftedCount})`}
             active={
-              filter ===
-              "draft"
+              filter === "draft"
             }
             onClick={() =>
               setFilter("draft")
@@ -813,8 +938,7 @@ export default function Home() {
           <FilterButton
             label={`Posted (${postedCount})`}
             active={
-              filter ===
-              "posted"
+              filter === "posted"
             }
             onClick={() =>
               setFilter(
@@ -824,6 +948,53 @@ export default function Home() {
           />
         </div>
 
+        <div className="mb-8 flex flex-wrap gap-2">
+          {(
+            [
+              "all",
+              5,
+              4,
+              3,
+              2,
+              1,
+            ] as RatingFilter[]
+          ).map((rating) => (
+            <FilterButton
+              key={rating}
+              label={
+                rating === "all"
+                  ? "All ratings"
+                  : `${rating}★`
+              }
+              active={
+                ratingFilter ===
+                rating
+              }
+              onClick={() =>
+                setRatingFilter(
+                  rating
+                )
+              }
+            />
+          ))}
+        </div>
+
+        {selectableVisibleReviews.length >
+          0 && (
+          <label className="mb-6 flex items-center gap-3 text-sm text-black/60">
+            <input
+              type="checkbox"
+              checked={
+                allVisibleSelected
+              }
+              onChange={
+                toggleSelectAllVisible
+              }
+            />
+            Select all visible
+          </label>
+        )}
+
         {loadingReviews ? (
           <div className="border-t border-black/10 py-20 text-sm text-black/40">
             Loading reviews...
@@ -831,100 +1002,97 @@ export default function Home() {
         ) : visibleReviews.length ===
           0 ? (
           <div className="border-t border-black/10 py-20">
-            <p className="text-lg font-medium">
-              No reviews found.
-            </p>
+            No reviews found.
           </div>
         ) : (
           <div className="border-t border-black/10">
             {visibleReviews.map(
-              (
-                review,
-                index
-              ) => {
+              (review, index) => {
                 const status =
                   statuses[
                     review.id
                   ];
 
-                const existingReply =
-                  review.existing_reply;
-
                 return (
                   <article
-                    key={
-                      review.id
-                    }
-                    className="grid gap-8 border-b border-black/10 py-10 md:grid-cols-[180px_1fr] md:py-12"
+                    key={review.id}
+                    className="grid gap-8 border-b border-black/10 py-10 md:grid-cols-[210px_1fr]"
                   >
                     <div>
+                      {status !==
+                        "posted" && (
+                        <label className="mb-5 flex items-center gap-2 text-xs text-black/50">
+                          <input
+                            type="checkbox"
+                            checked={selected.has(
+                              review.id
+                            )}
+                            onChange={() =>
+                              toggleSelected(
+                                review.id
+                              )
+                            }
+                          />
+                          Select
+                        </label>
+                      )}
+
                       <p className="text-sm font-medium">
                         {
                           review.reviewer
                         }
                       </p>
 
-                      <p className="mt-2 text-xs uppercase tracking-[0.14em] text-black/35">
+                      <p className="mt-2 text-xs text-black/35">
                         Review{" "}
                         {String(
-                          index +
-                            1
+                          index + 1
                         ).padStart(
                           2,
                           "0"
                         )}
                       </p>
 
-                      <div className="mt-5 text-sm tracking-[0.08em]">
+                      <div className="mt-5 text-sm">
                         {"★".repeat(
-                          Number(
-                            review.rating
-                          )
+                          review.rating
                         )}
-
                         <span className="text-black/15">
                           {"★".repeat(
-                            Math.max(
-                              0,
-                              5 -
-                                Number(
-                                  review.rating
-                                )
-                            )
+                            5 -
+                              review.rating
                           )}
                         </span>
                       </div>
 
-                      {status && (
-                        <div className="mt-5">
-                          <StatusBadge
-                            status={
-                              status
-                            }
-                          />
-                        </div>
-                      )}
+                      <div className="mt-4">
+                        <StatusBadge
+                          status={
+                            status
+                          }
+                        />
+                      </div>
                     </div>
 
                     <div>
-                      <p className="max-w-3xl text-xl leading-8 tracking-[-0.01em] md:text-2xl md:leading-9">
+                      <p className="max-w-3xl text-xl leading-8 md:text-2xl">
                         {review.review
                           ? `“${review.review}”`
                           : "No written comment"}
                       </p>
 
-                      {existingReply &&
+                      {review.existing_reply &&
                         status ===
                           "posted" && (
                           <div className="mt-7 border-l-2 border-black/15 pl-5">
-                            <p className="text-xs font-medium uppercase tracking-[0.16em] text-black/35">
-                              Existing
-                              Google reply
+                            <p className="text-xs uppercase text-black/35">
+                              Existing Google
+                              reply
                             </p>
 
-                            <p className="mt-3 max-w-3xl text-base leading-7 text-black/60">
+                            <p className="mt-3 text-base leading-7 text-black/60">
                               {
-                                existingReply
+                                review.existing_reply
                               }
                             </p>
                           </div>
@@ -938,17 +1106,14 @@ export default function Home() {
                           <button
                             onClick={() =>
                               generateReply(
-                                review.id,
-                                review.review,
-                                review.rating,
-                                review.reviewer
+                                review
                               )
                             }
                             disabled={
                               status ===
                               "generating"
                             }
-                            className="mt-7 border-b border-black pb-1 text-sm font-medium transition hover:opacity-50 disabled:opacity-30"
+                            className="mt-7 border-b border-black pb-1 text-sm font-medium disabled:opacity-30"
                           >
                             {status ===
                             "generating"
@@ -961,18 +1126,9 @@ export default function Home() {
                         review.id
                       ] && (
                         <div className="mt-8">
-                          <div className="mb-3 flex items-center justify-between">
-                            <p className="text-xs font-medium uppercase tracking-[0.16em] text-black/35">
-                              Suggested
-                              reply
-                            </p>
-
-                            <StatusBadge
-                              status={
-                                status
-                              }
-                            />
-                          </div>
+                          <p className="mb-3 text-xs uppercase text-black/35">
+                            Suggested reply
+                          </p>
 
                           <textarea
                             value={
@@ -980,13 +1136,9 @@ export default function Home() {
                                 review.id
                               ]
                             }
-                            onChange={(
-                              e
-                            ) => {
+                            onChange={(e) => {
                               setReplies(
-                                (
-                                  old
-                                ) => ({
+                                (old) => ({
                                   ...old,
                                   [review.id]:
                                     e
@@ -1000,9 +1152,7 @@ export default function Home() {
                                 "approved"
                               ) {
                                 setStatuses(
-                                  (
-                                    old
-                                  ) => ({
+                                  (old) => ({
                                     ...old,
                                     [review.id]:
                                       "draft",
@@ -1014,7 +1164,7 @@ export default function Home() {
                               status ===
                               "posted"
                             }
-                            className="min-h-36 w-full resize-y border border-black/15 bg-white p-5 text-base leading-7 outline-none transition focus:border-black disabled:bg-black/5 disabled:text-black/40"
+                            className="min-h-36 w-full resize-y border border-black/15 p-5"
                           />
 
                           <div className="mt-4 flex flex-wrap gap-3">
@@ -1028,7 +1178,7 @@ export default function Home() {
                                 status ===
                                 "posted"
                               }
-                              className="bg-[#171a20] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-black/80 disabled:cursor-not-allowed disabled:bg-black/20"
+                              className="bg-[#171a20] px-5 py-2.5 text-sm text-white disabled:opacity-30"
                             >
                               {status ===
                               "approved"
@@ -1046,7 +1196,7 @@ export default function Home() {
                                 status ===
                                 "posted"
                               }
-                              className="border border-black/15 px-5 py-2.5 text-sm font-medium transition hover:border-black disabled:cursor-not-allowed disabled:opacity-30"
+                              className="border border-black/15 px-5 py-2.5 text-sm"
                             >
                               Skip
                             </button>
@@ -1054,10 +1204,7 @@ export default function Home() {
                             <button
                               onClick={() =>
                                 generateReply(
-                                  review.id,
-                                  review.review,
-                                  review.rating,
-                                  review.reviewer
+                                  review
                                 )
                               }
                               disabled={
@@ -1066,12 +1213,9 @@ export default function Home() {
                                 status ===
                                   "generating"
                               }
-                              className="px-2 py-2.5 text-sm font-medium text-black/40 transition hover:text-black disabled:cursor-not-allowed disabled:opacity-25"
+                              className="px-2 py-2.5 text-sm text-black/40"
                             >
-                              {status ===
-                              "generating"
-                                ? "Generating..."
-                                : "Regenerate"}
+                              Regenerate
                             </button>
                           </div>
                         </div>
@@ -1096,19 +1240,6 @@ export default function Home() {
           </div>
         )}
       </section>
-
-      <footer className="border-t border-black/10">
-        <div className="mx-auto flex max-w-7xl flex-col gap-2 px-6 py-8 text-xs text-black/35 md:flex-row md:items-center md:justify-between md:px-10">
-          <span>
-            Smart Reviews
-          </span>
-
-          <span>
-            AI drafts. Human
-            decisions.
-          </span>
-        </div>
-      </footer>
     </main>
   );
 }
@@ -1121,12 +1252,12 @@ function Stat({
   value: number;
 }) {
   return (
-    <div className="border-r border-black/10 px-6 py-7 last:border-r-0 md:px-8">
-      <div className="text-3xl font-medium tracking-[-0.03em]">
+    <div className="border-r border-black/10 px-6 py-7">
+      <div className="text-3xl font-medium">
         {value}
       </div>
 
-      <div className="mt-1 text-xs uppercase tracking-[0.16em] text-black/35">
+      <div className="mt-1 text-xs uppercase text-black/35">
         {label}
       </div>
     </div>
@@ -1147,8 +1278,8 @@ function FilterButton({
       onClick={onClick}
       className={
         active
-          ? "bg-[#171a20] px-4 py-2 text-sm font-medium text-white"
-          : "border border-black/15 px-4 py-2 text-sm font-medium text-black/55 transition hover:border-black hover:text-black"
+          ? "bg-[#171a20] px-4 py-2 text-sm text-white"
+          : "border border-black/15 px-4 py-2 text-sm text-black/55"
       }
     >
       {label}
@@ -1161,9 +1292,17 @@ function StatusBadge({
 }: {
   status?: string;
 }) {
-  const labels: {
-    [key: string]: string;
-  } = {
+  if (
+    !status ||
+    status === "error"
+  ) {
+    return null;
+  }
+
+  const labels: Record<
+    string,
+    string
+  > = {
     draft: "Draft",
     approved: "Approved",
     skipped: "Skipped",
@@ -1172,15 +1311,8 @@ function StatusBadge({
       "Generating",
   };
 
-  if (
-    !status ||
-    status === "error"
-  ) {
-    return null;
-  }
-
   return (
-    <span className="text-xs font-medium uppercase tracking-[0.14em] text-black/40">
+    <span className="text-xs uppercase text-black/40">
       {labels[status] ||
         status}
     </span>

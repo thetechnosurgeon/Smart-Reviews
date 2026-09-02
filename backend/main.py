@@ -102,71 +102,87 @@ def get_reviews():
 @app.post("/generate-reply")
 def generate_reply(data: ReviewRequest):
     try:
-        review_text = data.review.strip()
+        original_review = data.review.strip()
 
-        if not review_text:
-            review_text = (
-                "The reviewer left a star rating "
-                "without a written comment."
-            )
+        has_written_comment = bool(original_review)
+
+        review_text = (
+            original_review
+            if has_written_comment
+            else "NO WRITTEN COMMENT"
+        )
 
         prompt = f"""
-You write Google Business Profile review replies for a healthcare business.
+You write public Google Business Profile replies for a healthcare organisation.
 
-Create ONE reply to the review below.
+Write ONE reply only.
 
-Reviewer:
+Reviewer name:
 {data.reviewer}
 
 Rating:
 {data.rating} out of 5 stars
 
-Review:
+Written review:
 {review_text}
 
-Rules:
-- Return only the final reply.
-- Keep it between 20 and 60 words.
-- Sound natural, warm and professional.
-- Do not sound like a generic customer-service template.
-- Refer naturally to a specific detail from the written review when possible.
-- You may use the reviewer's first name when it sounds natural, but do not force it.
-- Vary sentence structure and wording.
-- Do not invent facts.
-- Do not claim that an issue has been fixed unless the review says so.
-- Do not discuss diagnoses, treatment, medical history, test results or other private medical information.
-- Do not confirm that the reviewer was a patient.
-- Do not use emojis.
-- Do not use placeholders.
-- Do not mention AI.
-- Avoid phrases such as "Thank you for your kind words" when more specific wording is available.
+STRICT FACTUAL RULES:
 
-Rating-specific tone:
+- Use ONLY information explicitly contained in the review.
+- Never infer or invent anything about the organisation.
+- Never invent business values, policies, priorities, processes, improvements, actions or commitments.
+- Never say the organisation is "working to improve", "improving scheduling", "reducing delays", "committed to excellence", or similar unless that fact was explicitly provided.
+- Never claim something has been fixed, changed or investigated.
+- Never infer why the reviewer gave their rating.
+- If there is NO WRITTEN COMMENT, acknowledge only the rating and the fact that the reviewer took time to leave feedback.
+- Do not invent qualities such as attentive care, compassionate care, excellent service, calm environment or professionalism unless the reviewer explicitly said them.
+
+HEALTHCARE PRIVACY RULES:
+
+- Do not confirm that the reviewer was a patient.
+- Do not discuss diagnoses, treatment, medical history, medications, investigations or clinical details.
+- Do not reveal or infer private medical information.
+- For complaints, do not debate the facts publicly.
+- Do not admit negligence, wrongdoing or legal liability.
+
+STYLE:
+
+- Return only the final reply.
+- 15 to 55 words.
+- Natural, warm and professional.
+- Concise.
+- No emojis.
+- No placeholders.
+- Do not mention AI.
+- Avoid repetitive customer-service phrases.
+- You may use the reviewer's first name naturally, but not every reply needs it.
+- Vary wording and sentence structure between replies.
+
+RATING GUIDANCE:
 
 5 stars:
-- Warm and appreciative.
-- Acknowledge what the reviewer specifically valued.
-- Keep the response concise.
+- Thank them.
+- If they wrote a comment, acknowledge one specific positive detail they actually mentioned.
 
 4 stars:
-- Appreciative and positive.
-- Acknowledge both positive feedback and any minor concern if one is mentioned.
+- Thank them.
+- Acknowledge the positive part and any stated concern without inventing a solution.
 
 3 stars:
-- Acknowledge the mixed experience.
-- Be polite and receptive.
-- Express that the feedback is useful.
+- Acknowledge the mixed feedback.
+- Thank them for sharing it.
+- Do not imply corrective action unless explicitly known.
 
 1 or 2 stars:
+- Acknowledge only the concern they actually stated.
 - Be calm, empathetic and non-defensive.
-- Acknowledge the concern without arguing.
-- Do not admit negligence, wrongdoing or liability.
-- Do not discuss private details publicly.
-- When appropriate, invite the reviewer to contact the organisation directly so the concern can be understood better.
+- When appropriate, invite them to contact the organisation directly to discuss the concern.
+- Do not promise an investigation or improvement.
 
-No written comment:
-- Thank the reviewer briefly for taking the time to leave a rating.
-- Do not invent a reason for the rating.
+NO WRITTEN COMMENT:
+- Mention only the star rating or thank them for leaving a rating.
+- Do not describe what they liked.
+- Do not infer anything about their experience.
 
 Write the reply now.
 """
@@ -212,8 +228,8 @@ def post_reply(data: PostReplyRequest):
     if not data.account_id or not data.location_id:
         return {
             "error": (
-                "Google Business Profile account "
-                "and location are required before posting."
+                "Google Business Profile account and location "
+                "are required before posting."
             )
         }
 
@@ -379,9 +395,7 @@ def get_google_locations(account_id: str):
             "Authorization": f"Bearer {access_token}"
         },
         params={
-            "readMask": (
-                "name,title,storefrontAddress"
-            )
+            "readMask": "name,title,storefrontAddress"
         },
         timeout=30,
     )
@@ -424,9 +438,7 @@ def fetch_google_reviews(
                 f"locations/{location_id}/reviews"
             ),
             headers={
-                "Authorization": (
-                    f"Bearer {access_token}"
-                )
+                "Authorization": f"Bearer {access_token}"
             },
             params=params,
             timeout=30,
@@ -535,9 +547,7 @@ def get_reviews_for_dashboard(
 
         formatted_reviews.append(
             {
-                "id": review.get(
-                    "reviewId"
-                ),
+                "id": review.get("reviewId"),
                 "reviewer": (
                     review
                     .get("reviewer", {})
