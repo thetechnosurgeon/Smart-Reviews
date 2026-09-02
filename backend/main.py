@@ -64,7 +64,7 @@ app.add_middleware(
 
 class ReviewRequest(BaseModel):
     review: str
-
+    rating: int
 
 class ApproveRequest(BaseModel):
     review_id: str
@@ -132,28 +132,46 @@ def get_reviews():
 @app.post("/generate-reply")
 def generate_reply(data: ReviewRequest):
     try:
+        review_text = data.review.strip()
+
+        if not review_text:
+            review_text = "The customer left a rating without a written comment."
+
         response = client.responses.create(
             model="openai/gpt-oss-20b",
-            input=(
-                "Write a short, warm, professional reply "
-                "to this customer review. "
-                "Do not invent facts. "
-                "Keep it under 60 words. "
-                "Do not include placeholders. "
-                "Return only the reply text.\n\n"
-                f"Review: {data.review}"
-            ),
+            input=f"""
+You write Google Business Profile review replies for a healthcare business.
+
+Your job:
+- Write a short, natural, professional reply.
+- Keep it under 60 words.
+- Do not invent facts.
+- Do not mention diagnoses, treatments, medical conditions, or private patient information.
+- Do not sound robotic or repetitive.
+- Do not use placeholders.
+- Do not use emojis.
+- Return only the reply text.
+
+Tone rules:
+- 5 stars: warm, appreciative, concise.
+- 4 stars: appreciative, positive, slightly reserved.
+- 3 stars: polite, acknowledge the mixed experience, invite improvement.
+- 1–2 stars: calm, empathetic, non-defensive, avoid admitting fault, invite the reviewer to contact the business directly.
+- If there is no written comment, thank them briefly for their feedback/rating.
+
+Rating: {data.rating} stars
+
+Review:
+{review_text}
+"""
         )
 
         return {
-            "reply": response.output_text
+            "reply": response.output_text.strip()
         }
 
     except Exception as e:
-        return {
-            "error": str(e)
-        }
-
+        return {"error": str(e)}
 
 # --------------------------------------------------
 # APPROVAL

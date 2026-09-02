@@ -59,7 +59,6 @@ export default function Home() {
     setGoogleError("");
 
     try {
-      // 1. Get Google Business accounts
       const accountResponse = await fetch(
         `${API_URL}/google/accounts`
       );
@@ -89,7 +88,6 @@ export default function Home() {
 
       setGoogleAccountId(accountId);
 
-      // 2. Get locations
       const locationResponse = await fetch(
         `${API_URL}/google/locations/${accountId}`
       );
@@ -120,7 +118,6 @@ export default function Home() {
 
       setGoogleLocationId(locationId);
 
-      // 3. Get real Google reviews
       const reviewResponse = await fetch(
         `${API_URL}/reviews/${accountId}/${locationId}`
       );
@@ -153,7 +150,8 @@ export default function Home() {
 
   async function generateReply(
     reviewId: string,
-    reviewText: string
+    reviewText: string,
+    rating: number
   ) {
     setStatuses((old) => ({
       ...old,
@@ -170,6 +168,7 @@ export default function Home() {
           },
           body: JSON.stringify({
             review: reviewText,
+            rating: rating,
           }),
         }
       );
@@ -205,7 +204,8 @@ export default function Home() {
     for (const review of reviews) {
       await generateReply(
         review.id,
-        review.review
+        review.review,
+        review.rating
       );
     }
 
@@ -501,7 +501,8 @@ export default function Home() {
                         onClick={() =>
                           generateReply(
                             review.id,
-                            review.review
+                            review.review,
+                            review.rating
                           )
                         }
                         disabled={
@@ -546,8 +547,7 @@ export default function Home() {
                               (old) => ({
                                 ...old,
                                 [review.id]:
-                                  e.target
-                                    .value,
+                                  e.target.value,
                               })
                             )
                           }
@@ -595,7 +595,8 @@ export default function Home() {
                             onClick={() =>
                               generateReply(
                                 review.id,
-                                review.review
+                                review.review,
+                                review.rating
                               )
                             }
                             disabled={
