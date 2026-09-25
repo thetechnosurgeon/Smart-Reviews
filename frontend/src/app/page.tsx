@@ -609,9 +609,10 @@ export default function Home() {
 
           <div className="mt-10 flex flex-wrap items-center gap-4">
             <button
-              onClick={
-                loadGoogleReviews
-              }
+              onClick={() => {
+                window.location.href =
+                  `${API_URL}/auth/google`;
+              }}
               disabled={
                 loadingReviews
               }
