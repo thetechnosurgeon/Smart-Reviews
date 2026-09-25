@@ -14,8 +14,8 @@ type Review = {
 type Filter =
   | "all"
   | "unanswered"
+  | "attention"
   | "draft"
-  | "approved"
   | "posted";
 
 type RatingFilter =
@@ -25,6 +25,8 @@ type RatingFilter =
   | 3
   | 4
   | 5;
+
+const BATCH_SIZE = 25;
 
 export default function Home() {
   const API_URL =
@@ -36,12 +38,8 @@ export default function Home() {
   const [statuses, setStatuses] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const [selected, setSelected] = useState<Set<string>>(
-    new Set()
-  );
-
   const [loadingReviews, setLoadingReviews] =
-    useState(true);
+    useState(false);
 
   const [generatingAll, setGeneratingAll] =
     useState(false);
@@ -67,6 +65,9 @@ export default function Home() {
   const [googleError, setGoogleError] =
     useState("");
 
+  const [pabblyConnected, setPabblyConnected] =
+    useState(false);
+
   const [filter, setFilter] =
     useState<Filter>("all");
 
@@ -84,9 +85,9 @@ export default function Home() {
     if (connected) {
       setGoogleConnected(true);
       loadGoogleReviews();
-    } else {
-      loadDemoReviews();
     }
+    // Otherwise: wait for the person to click
+    // "Fetch Reviews" -- nothing auto-loads.
   }, []);
 
   function getErrorMessage(
@@ -108,7 +109,6 @@ export default function Home() {
     setReplies({});
     setStatuses({});
     setErrors({});
-    setSelected(new Set());
   }
 
   async function loadDemoReviews() {
@@ -256,6 +256,56 @@ export default function Home() {
     }
   }
 
+  async function loadPabblyReviews() {
+    setLoadingReviews(true);
+    setGoogleError("");
+    resetWorkflow();
+
+    try {
+      const response = await fetch(
+        `${API_URL}/pabbly/reviews`
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || data.error) {
+        throw new Error(
+          data.error ||
+            "Unable to fetch reviews."
+        );
+      }
+
+      const loadedReviews =
+        data.reviews || [];
+
+      setReviews(loadedReviews);
+      setPabblyConnected(true);
+
+      const initialStatuses: Record<string, string> = {};
+
+      for (const review of loadedReviews) {
+        if (review.has_reply) {
+          initialStatuses[review.id] =
+            "posted";
+        }
+      }
+
+      setStatuses(initialStatuses);
+    } catch (error) {
+      setReviews([]);
+      setPabblyConnected(false);
+
+      setGoogleError(
+        getErrorMessage(
+          error,
+          "Unable to fetch reviews."
+        )
+      );
+    } finally {
+      setLoadingReviews(false);
+    }
+  }
+
   async function generateReply(
     review: Review
   ) {
@@ -331,13 +381,7 @@ export default function Home() {
   async function generateReviews(
     targetReviews: Review[]
   ) {
-    const validTargets =
-      targetReviews.filter(
-        (review) =>
-          statuses[review.id] !== "posted"
-      );
-
-    if (!validTargets.length) {
+    if (!targetReviews.length) {
       return;
     }
 
@@ -345,144 +389,53 @@ export default function Home() {
 
     setGenerationProgress({
       current: 0,
-      total: validTargets.length,
+      total: targetReviews.length,
     });
 
     for (
       let i = 0;
-      i < validTargets.length;
+      i < targetReviews.length;
       i++
     ) {
       setGenerationProgress({
         current: i + 1,
-        total: validTargets.length,
+        total: targetReviews.length,
       });
 
       await generateReply(
-        validTargets[i]
+        targetReviews[i]
       );
     }
 
     setGeneratingAll(false);
   }
 
-  async function generateAllReplies() {
+  // Reviews that don't have a drafted or posted reply yet
+  // (a failed generation counts as still-pending so it's
+  // picked up again by the next batch).
+  const pendingReviews = reviews.filter((review) => {
+    const status = statuses[review.id];
+    return !status || status === "error";
+  });
+
+  async function generateNextBatch() {
     await generateReviews(
-      reviews
+      pendingReviews.slice(0, BATCH_SIZE)
     );
   }
 
-  async function generateSelectedReplies() {
-    await generateReviews(
-      reviews.filter((review) =>
-        selected.has(review.id)
-      )
-    );
-  }
-
-  async function approveReply(
-    reviewId: string
-  ) {
-    const reply =
-      replies[reviewId]?.trim();
-
-    if (!reply) {
-      setErrors((old) => ({
-        ...old,
-        [reviewId]:
-          "Reply cannot be empty.",
-      }));
-
-      return false;
-    }
-
-    try {
-      const response = await fetch(
-        `${API_URL}/approve-reply`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body: JSON.stringify({
-            review_id: reviewId,
-            reply,
-          }),
-        }
+  async function postAllReplies() {
+    if (!googleConnected && !pabblyConnected) {
+      setGoogleError(
+        "Fetch reviews (or connect Google Business Profile) before posting replies."
       );
 
-      const data =
-        await response.json();
-
-      if (!response.ok || data.error) {
-        throw new Error(
-          data.error ||
-            "Approval failed"
-        );
-      }
-
-      setStatuses((old) => ({
-        ...old,
-        [reviewId]: "approved",
-      }));
-
-      setErrors((old) => ({
-        ...old,
-        [reviewId]: "",
-      }));
-
-      return true;
-    } catch (error) {
-      setStatuses((old) => ({
-        ...old,
-        [reviewId]: "error",
-      }));
-
-      setErrors((old) => ({
-        ...old,
-        [reviewId]:
-          getErrorMessage(
-            error,
-            "Approval failed."
-          ),
-      }));
-
-      return false;
+      return;
     }
-  }
 
-  async function approveSelected() {
-    const ids = Array.from(
-      selected
-    );
-
-    for (const id of ids) {
-      if (
-        statuses[id] === "draft"
-      ) {
-        await approveReply(id);
-      }
-    }
-  }
-
-  async function approveAllDrafts() {
-    const draftIds =
-      Object.keys(statuses).filter(
-        (id) =>
-          statuses[id] === "draft"
-      );
-
-    for (const id of draftIds) {
-      await approveReply(id);
-    }
-  }
-
-  async function postApprovedReplies() {
     if (
-      !googleConnected ||
-      !googleAccountId ||
-      !googleLocationId
+      googleConnected &&
+      (!googleAccountId || !googleLocationId)
     ) {
       setGoogleError(
         "Connect Google Business Profile before posting replies."
@@ -491,21 +444,21 @@ export default function Home() {
       return;
     }
 
-    const approvedReviews =
+    const draftReviews =
       reviews.filter(
         (review) =>
           statuses[review.id] ===
-          "approved"
+          "draft"
       );
 
-    if (!approvedReviews.length) {
+    if (!draftReviews.length) {
       return;
     }
 
     const confirmed =
       window.confirm(
-        `Post ${approvedReviews.length} approved repl${
-          approvedReviews.length === 1
+        `Post ${draftReviews.length} repl${
+          draftReviews.length === 1
             ? "y"
             : "ies"
         } to Google Business Profile?\n\nThis action will publish them publicly.`
@@ -518,11 +471,37 @@ export default function Home() {
     setPosting(true);
     setGoogleError("");
 
-    for (const review of approvedReviews) {
+    for (const review of draftReviews) {
       try {
+        const endpoint = googleConnected
+          ? `${API_URL}/post-reply`
+          : `${API_URL}/pabbly/post-reply`;
+
+        const body = googleConnected
+          ? {
+              account_id:
+                googleAccountId,
+              location_id:
+                googleLocationId,
+              review_id:
+                review.id,
+              reply:
+                replies[
+                  review.id
+                ],
+            }
+          : {
+              review_id:
+                review.id,
+              reply:
+                replies[
+                  review.id
+                ],
+            };
+
         const response =
           await fetch(
-            `${API_URL}/post-reply`,
+            endpoint,
             {
               method: "POST",
               headers: {
@@ -530,18 +509,7 @@ export default function Home() {
                   "application/json",
               },
               body:
-                JSON.stringify({
-                  account_id:
-                    googleAccountId,
-                  location_id:
-                    googleLocationId,
-                  review_id:
-                    review.id,
-                  reply:
-                    replies[
-                      review.id
-                    ],
-                }),
+                JSON.stringify(body),
             }
           );
 
@@ -609,33 +577,10 @@ export default function Home() {
     }));
   }
 
-  function toggleSelected(
-    reviewId: string
-  ) {
-    setSelected((old) => {
-      const next =
-        new Set(old);
-
-      if (next.has(reviewId)) {
-        next.delete(reviewId);
-      } else {
-        next.add(reviewId);
-      }
-
-      return next;
-    });
-  }
-
   const draftedCount =
     Object.values(statuses).filter(
       (status) =>
         status === "draft"
-    ).length;
-
-  const approvedCount =
-    Object.values(statuses).filter(
-      (status) =>
-        status === "approved"
     ).length;
 
   const postedCount =
@@ -649,6 +594,14 @@ export default function Home() {
       (review) =>
         statuses[review.id] !==
         "posted"
+    ).length;
+
+  const attentionCount =
+    reviews.filter(
+      (review) =>
+        review.rating <= 2 &&
+        statuses[review.id] !==
+          "posted"
     ).length;
 
   const visibleReviews =
@@ -665,6 +618,11 @@ export default function Home() {
             : filter ===
               "unanswered"
             ? status !== "posted"
+            : filter ===
+              "attention"
+            ? review.rating <=
+                2 &&
+              status !== "posted"
             : status === filter;
 
         const ratingMatches =
@@ -680,39 +638,8 @@ export default function Home() {
       }
     );
 
-  const selectableVisibleReviews =
-    visibleReviews.filter(
-      (review) =>
-        statuses[review.id] !==
-        "posted"
-    );
-
-  const allVisibleSelected =
-    selectableVisibleReviews.length >
-      0 &&
-    selectableVisibleReviews.every(
-      (review) =>
-        selected.has(review.id)
-    );
-
-  function toggleSelectAllVisible() {
-    setSelected((old) => {
-      const next =
-        new Set(old);
-
-      if (allVisibleSelected) {
-        for (const review of selectableVisibleReviews) {
-          next.delete(review.id);
-        }
-      } else {
-        for (const review of selectableVisibleReviews) {
-          next.add(review.id);
-        }
-      }
-
-      return next;
-    });
-  }
+  const hasFetched =
+    googleConnected || pabblyConnected;
 
   return (
     <main className="min-h-screen bg-white text-[#171a20]">
@@ -741,14 +668,32 @@ export default function Home() {
           </h1>
 
           <p className="mt-8 max-w-2xl text-lg leading-8 text-black/50 md:text-xl">
-            Generate thoughtful replies,
-            refine them, approve what
-            matters, and publish only
-            when you are ready.
+            Fetch your reviews, generate
+            replies, edit anything that
+            needs it, and publish everything
+            in one click.
           </p>
         </div>
 
-        <div className="mt-10 flex flex-wrap gap-3">
+        <div className="mt-10 flex flex-wrap items-center gap-3">
+          <button
+            onClick={
+              loadPabblyReviews
+            }
+            disabled={loadingReviews}
+            className={
+              pabblyConnected
+                ? "border border-green-700 bg-green-50 px-6 py-3 text-sm font-medium text-green-800"
+                : "bg-[#171a20] px-6 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-black/20"
+            }
+          >
+            {loadingReviews
+              ? "Fetching..."
+              : pabblyConnected
+              ? "✓ Reviews fetched -- Refresh"
+              : "Fetch Reviews"}
+          </button>
+
           <button
             onClick={() => {
               window.location.href =
@@ -762,7 +707,7 @@ export default function Home() {
           >
             {googleConnected
               ? "✓ Google Business Profile Connected"
-              : "Connect Google Business Profile"}
+              : "Connect Google Business Profile directly"}
           </button>
 
           {googleConnected && (
@@ -772,9 +717,18 @@ export default function Home() {
               }
               className="border border-black/20 px-6 py-3 text-sm font-medium transition hover:bg-[#171a20] hover:text-white"
             >
-              Refresh reviews
+              Refresh
             </button>
           )}
+
+          <button
+            onClick={
+              loadDemoReviews
+            }
+            className="px-2 py-3 text-sm text-black/35 underline-offset-2 hover:underline"
+          >
+            Preview with sample data
+          </button>
         </div>
 
         {googleError && (
@@ -786,76 +740,54 @@ export default function Home() {
         <div className="mt-6 flex flex-wrap gap-3">
           <button
             onClick={
-              generateAllReplies
+              generateNextBatch
             }
             disabled={
               generatingAll ||
-              reviews.length === 0
+              pendingReviews.length === 0
             }
             className="bg-[#171a20] px-6 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-black/20"
           >
             {generatingAll
               ? `Generating ${generationProgress.current}/${generationProgress.total}`
-              : "Generate all replies"}
+              : `Generate Reviews${
+                  pendingReviews.length
+                    ? ` (${Math.min(
+                        pendingReviews.length,
+                        BATCH_SIZE
+                      )})`
+                    : ""
+                }`}
           </button>
 
           <button
             onClick={
-              generateSelectedReplies
-            }
-            disabled={
-              generatingAll ||
-              selected.size === 0
-            }
-            className="border border-black/20 px-6 py-3 text-sm font-medium disabled:opacity-30"
-          >
-            Generate selected
-          </button>
-
-          <button
-            onClick={
-              approveSelected
-            }
-            disabled={
-              selected.size === 0
-            }
-            className="border border-black/20 px-6 py-3 text-sm font-medium disabled:opacity-30"
-          >
-            Approve selected
-          </button>
-
-          <button
-            onClick={
-              approveAllDrafts
-            }
-            disabled={
-              draftedCount === 0
-            }
-            className="border border-black/20 px-6 py-3 text-sm font-medium disabled:opacity-30"
-          >
-            Approve all drafts
-          </button>
-
-          <button
-            onClick={
-              postApprovedReplies
+              postAllReplies
             }
             disabled={
               posting ||
-              approvedCount === 0 ||
-              !googleConnected
+              draftedCount === 0 ||
+              !hasFetched
             }
             className="border border-black/20 px-6 py-3 text-sm font-medium disabled:opacity-30"
           >
             {posting
               ? "Posting..."
-              : `Post approved${
-                  approvedCount
-                    ? ` (${approvedCount})`
+              : `Post All Replies${
+                  draftedCount
+                    ? ` (${draftedCount})`
                     : ""
                 }`}
           </button>
         </div>
+
+        {pendingReviews.length > BATCH_SIZE && (
+          <p className="mt-3 text-xs text-black/35">
+            {pendingReviews.length} reviews still
+            need replies -- click Generate Reviews
+            again after this batch finishes.
+          </p>
+        )}
       </section>
 
       <section className="border-y border-black/10 bg-[#f5f5f5]">
@@ -865,12 +797,12 @@ export default function Home() {
             value={reviews.length}
           />
           <Stat
-            label="Drafts"
-            value={draftedCount}
+            label="Pending"
+            value={pendingReviews.length}
           />
           <Stat
-            label="Approved"
-            value={approvedCount}
+            label="Drafts"
+            value={draftedCount}
           />
           <Stat
             label="Posted"
@@ -913,25 +845,25 @@ export default function Home() {
           />
 
           <FilterButton
+            label={`Needs attention (${attentionCount})`}
+            active={
+              filter ===
+              "attention"
+            }
+            onClick={() =>
+              setFilter(
+                "attention"
+              )
+            }
+          />
+
+          <FilterButton
             label={`Drafts (${draftedCount})`}
             active={
               filter === "draft"
             }
             onClick={() =>
               setFilter("draft")
-            }
-          />
-
-          <FilterButton
-            label={`Approved (${approvedCount})`}
-            active={
-              filter ===
-              "approved"
-            }
-            onClick={() =>
-              setFilter(
-                "approved"
-              )
             }
           />
 
@@ -979,30 +911,16 @@ export default function Home() {
           ))}
         </div>
 
-        {selectableVisibleReviews.length >
-          0 && (
-          <label className="mb-6 flex items-center gap-3 text-sm text-black/60">
-            <input
-              type="checkbox"
-              checked={
-                allVisibleSelected
-              }
-              onChange={
-                toggleSelectAllVisible
-              }
-            />
-            Select all visible
-          </label>
-        )}
-
         {loadingReviews ? (
           <div className="border-t border-black/10 py-20 text-sm text-black/40">
             Loading reviews...
           </div>
         ) : visibleReviews.length ===
           0 ? (
-          <div className="border-t border-black/10 py-20">
-            No reviews found.
+          <div className="border-t border-black/10 py-20 text-sm text-black/40">
+            {reviews.length === 0
+              ? "No reviews loaded yet -- click \u201cFetch Reviews\u201d above."
+              : "No reviews found."}
           </div>
         ) : (
           <div className="border-t border-black/10">
@@ -1019,24 +937,6 @@ export default function Home() {
                     className="grid gap-8 border-b border-black/10 py-10 md:grid-cols-[210px_1fr]"
                   >
                     <div>
-                      {status !==
-                        "posted" && (
-                        <label className="mb-5 flex items-center gap-2 text-xs text-black/50">
-                          <input
-                            type="checkbox"
-                            checked={selected.has(
-                              review.id
-                            )}
-                            onChange={() =>
-                              toggleSelected(
-                                review.id
-                              )
-                            }
-                          />
-                          Select
-                        </label>
-                      )}
-
                       <p className="text-sm font-medium">
                         {
                           review.reviewer
@@ -1065,6 +965,15 @@ export default function Home() {
                         </span>
                       </div>
 
+                      {review.rating <=
+                        2 &&
+                        status !==
+                          "posted" && (
+                          <p className="mt-3 text-xs font-medium uppercase tracking-wide text-red-600">
+                            Needs attention
+                          </p>
+                        )}
+
                       <div className="mt-4">
                         <StatusBadge
                           status={
@@ -1077,7 +986,7 @@ export default function Home() {
                     <div>
                       <p className="max-w-3xl text-xl leading-8 md:text-2xl">
                         {review.review
-                          ? `“${review.review}”`
+                          ? `\u201c${review.review}\u201d`
                           : "No written comment"}
                       </p>
 
@@ -1146,19 +1055,6 @@ export default function Home() {
                                       .value,
                                 })
                               );
-
-                              if (
-                                status ===
-                                "approved"
-                              ) {
-                                setStatuses(
-                                  (old) => ({
-                                    ...old,
-                                    [review.id]:
-                                      "draft",
-                                  })
-                                );
-                              }
                             }}
                             disabled={
                               status ===
@@ -1170,24 +1066,6 @@ export default function Home() {
                           <div className="mt-4 flex flex-wrap gap-3">
                             <button
                               onClick={() =>
-                                approveReply(
-                                  review.id
-                                )
-                              }
-                              disabled={
-                                status ===
-                                "posted"
-                              }
-                              className="bg-[#171a20] px-5 py-2.5 text-sm text-white disabled:opacity-30"
-                            >
-                              {status ===
-                              "approved"
-                                ? "Approved"
-                                : "Approve"}
-                            </button>
-
-                            <button
-                              onClick={() =>
                                 skipReply(
                                   review.id
                                 )
@@ -1196,7 +1074,7 @@ export default function Home() {
                                 status ===
                                 "posted"
                               }
-                              className="border border-black/15 px-5 py-2.5 text-sm"
+                              className="border border-black/15 px-5 py-2.5 text-sm disabled:opacity-30"
                             >
                               Skip
                             </button>
@@ -1213,7 +1091,7 @@ export default function Home() {
                                 status ===
                                   "generating"
                               }
-                              className="px-2 py-2.5 text-sm text-black/40"
+                              className="px-2 py-2.5 text-sm text-black/40 disabled:opacity-30"
                             >
                               Regenerate
                             </button>
@@ -1304,7 +1182,6 @@ function StatusBadge({
     string
   > = {
     draft: "Draft",
-    approved: "Approved",
     skipped: "Skipped",
     posted: "Posted",
     generating:
