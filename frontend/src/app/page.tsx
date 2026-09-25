@@ -29,6 +29,11 @@ type RatingFilter =
 
 const BATCH_SIZE = 25;
 
+// This account has more than one Google Business Profile location on it.
+// Reviews only live under this one -- if it's ever missing from the
+// account's location list, we fall back to the first one returned.
+const PRIMARY_LOCATION_ID = "9505403968657639010";
+
 export default function Home() {
   const API_URL =
     process.env.NEXT_PUBLIC_API_URL ||
@@ -160,8 +165,17 @@ export default function Home() {
         );
       }
 
+      const matchedLocation =
+        locationData.locations.find(
+          (loc: { name: string }) =>
+            loc.name?.replace(
+              "locations/",
+              ""
+            ) === PRIMARY_LOCATION_ID
+        ) || locationData.locations[0];
+
       const locationId =
-        locationData.locations[0].name.replace(
+        matchedLocation.name.replace(
           "locations/",
           ""
         );
