@@ -1,9 +1,8 @@
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from openai import OpenAI
-from typing import Optional
 import os
 import requests
 from urllib.parse import urlencode
@@ -12,22 +11,12 @@ app = FastAPI()
 
 google_tokens = {}
 
-# In-memory store for reviews pushed in by Pabbly (keyed by Google review id).
-# Same "no DB yet" pattern as google_tokens above -- resets on server restart.
-pabbly_reviews = {}
-
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
 GOOGLE_REDIRECT_URI = "https://smart-reviews.onrender.com/auth/google/callback"
 GOOGLE_SCOPE = "https://www.googleapis.com/auth/business.manage"
 
 FRONTEND_URL = "https://smartreviews-mcjc.onrender.com"
-
-# Pabbly bridge config -- lets Google reviews flow in/out via Pabbly's own
-# already-approved Google Business Profile connection instead of this app's
-# (currently unapproved) Cloud project.
-PABBLY_SHARED_SECRET = os.getenv("PABBLY_SHARED_SECRET", "").strip()
-PABBLY_REPLY_WEBHOOK_URL = os.getenv("PABBLY_REPLY_WEBHOOK_URL", "").strip()
 
 # Optional custom tone guidance per review type. Set these on Render if you
 # want to steer replies for that bucket -- e.g. NEGATIVE_REPLY_NOTES="always
@@ -339,145 +328,6 @@ def post_reply(data: PostReplyRequest):
         "status": "posted",
         "review_id": data.review_id,
         "mode": "google",
-    }
-
-
-class PabblyPostReplyRequest(BaseModel):
-    review_id: str
-    reply: str
-
-
-def _first_present(data: dict, *keys, default=None):
-    for key in keys:
-        value = data.get(key)
-        if value not in (None, ""):
-            return value
-    return default
-
-
-@app.post("/pabbly/webhook/new-review")
-def pabbly_new_review(
-    data: dict,
-    x_app_secret: Optional[str] = Header(
-        default=None, alias="X-App-Secret"
-    ),
-):
-    """
-    Pabbly's 'New Review' -> 'API by Pabbly' action POSTs here.
-
-    Expected JSON body (map these in the Pabbly action step -- extra
-    fields are ignored, and a few common alternate key names are
-    accepted too):
-      review_id : Google's review id for this review   (required)
-      reviewer  : reviewer display name
-      rating    : 1-5, or Google's ONE/TWO/.../FIVE string
-      review    : the written review text
-    """
-    if PABBLY_SHARED_SECRET and x_app_secret != PABBLY_SHARED_SECRET:
-        raise HTTPException(status_code=401, detail="Invalid secret")
-
-    review_id = _first_present(
-        data, "review_id", "reviewId", "id"
-    )
-
-    if not review_id:
-        raise HTTPException(
-            status_code=400,
-            detail="review_id is required",
-        )
-
-    reviewer = _first_present(
-        data,
-        "reviewer",
-        "reviewer_name",
-        "author",
-        "displayName",
-        default="Anonymous",
-    )
-
-    raw_rating = _first_present(
-        data, "rating", "starRating", "star_rating", default=0
-    )
-
-    review_text = _first_present(
-        data, "review", "review_text", "comment", "text", default=""
-    )
-
-    existing = pabbly_reviews.get(review_id, {})
-
-    pabbly_reviews[review_id] = {
-        "id": review_id,
-        "reviewer": reviewer,
-        "rating": normalize_rating(raw_rating),
-        "review": review_text,
-        "has_reply": existing.get("has_reply", False),
-        "existing_reply": existing.get("existing_reply", ""),
-    }
-
-    return {"status": "stored", "review_id": review_id}
-
-
-@app.get("/pabbly/reviews")
-def get_pabbly_reviews():
-    return {
-        "reviews": list(pabbly_reviews.values())
-    }
-
-
-@app.post("/pabbly/post-reply")
-def pabbly_post_reply(data: PabblyPostReplyRequest):
-    if not PABBLY_REPLY_WEBHOOK_URL:
-        return {
-            "error": (
-                "PABBLY_REPLY_WEBHOOK_URL is not configured "
-                "on the server."
-            )
-        }
-
-    if data.review_id not in pabbly_reviews:
-        return {
-            "error": (
-                "Unknown review_id -- reload reviews from "
-                "Pabbly and try again."
-            )
-        }
-
-    reply_text = data.reply.strip()
-
-    if not reply_text:
-        return {"error": "Reply cannot be empty"}
-
-    headers = {}
-
-    if PABBLY_SHARED_SECRET:
-        headers["X-App-Secret"] = PABBLY_SHARED_SECRET
-
-    try:
-        response = requests.post(
-            PABBLY_REPLY_WEBHOOK_URL,
-            headers=headers,
-            json={
-                "review_id": data.review_id,
-                "reply": reply_text,
-            },
-            timeout=30,
-        )
-    except requests.RequestException as e:
-        return {"error": f"Could not reach Pabbly: {e}"}
-
-    if response.status_code >= 300:
-        return {
-            "error": "Pabbly workflow rejected the request",
-            "details": response.text,
-        }
-
-    pabbly_reviews[data.review_id]["has_reply"] = True
-    pabbly_reviews[data.review_id]["existing_reply"] = reply_text
-
-    return {
-        "status": "posted",
-        "review_id": data.review_id,
-        "mode": "pabbly",
     }
 
 

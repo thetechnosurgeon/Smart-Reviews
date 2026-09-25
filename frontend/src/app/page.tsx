@@ -16,6 +16,7 @@ type Filter =
   | "unanswered"
   | "attention"
   | "draft"
+  | "approved"
   | "posted";
 
 type RatingFilter =
@@ -65,9 +66,6 @@ export default function Home() {
   const [googleError, setGoogleError] =
     useState("");
 
-  const [pabblyConnected, setPabblyConnected] =
-    useState(false);
-
   const [filter, setFilter] =
     useState<Filter>("all");
 
@@ -79,15 +77,10 @@ export default function Home() {
       window.location.search
     );
 
-    const connected =
-      params.get("connected") === "true";
-
-    if (connected) {
+    if (params.get("connected") === "true") {
       setGoogleConnected(true);
       loadGoogleReviews();
     }
-    // Otherwise: wait for the person to click
-    // "Fetch Reviews" -- nothing auto-loads.
   }, []);
 
   function getErrorMessage(
@@ -109,42 +102,6 @@ export default function Home() {
     setReplies({});
     setStatuses({});
     setErrors({});
-  }
-
-  async function loadDemoReviews() {
-    setLoadingReviews(true);
-    setGoogleError("");
-    resetWorkflow();
-
-    try {
-      const response = await fetch(
-        `${API_URL}/reviews`
-      );
-
-      const data = await response.json();
-
-      if (!response.ok || data.error) {
-        throw new Error(
-          data.error ||
-            "Unable to load reviews."
-        );
-      }
-
-      setReviews(
-        data.reviews || []
-      );
-    } catch (error) {
-      setReviews([]);
-
-      setGoogleError(
-        getErrorMessage(
-          error,
-          "Unable to load reviews."
-        )
-      );
-    } finally {
-      setLoadingReviews(false);
-    }
   }
 
   async function loadGoogleReviews() {
@@ -230,6 +187,7 @@ export default function Home() {
         reviewData.reviews || [];
 
       setReviews(loadedReviews);
+      setGoogleConnected(true);
 
       const initialStatuses: Record<string, string> = {};
 
@@ -244,61 +202,12 @@ export default function Home() {
     } catch (error) {
       console.error(error);
       setReviews([]);
+      setGoogleConnected(false);
 
       setGoogleError(
         getErrorMessage(
           error,
           "Unable to load Google reviews."
-        )
-      );
-    } finally {
-      setLoadingReviews(false);
-    }
-  }
-
-  async function loadPabblyReviews() {
-    setLoadingReviews(true);
-    setGoogleError("");
-    resetWorkflow();
-
-    try {
-      const response = await fetch(
-        `${API_URL}/pabbly/reviews`
-      );
-
-      const data = await response.json();
-
-      if (!response.ok || data.error) {
-        throw new Error(
-          data.error ||
-            "Unable to fetch reviews."
-        );
-      }
-
-      const loadedReviews =
-        data.reviews || [];
-
-      setReviews(loadedReviews);
-      setPabblyConnected(true);
-
-      const initialStatuses: Record<string, string> = {};
-
-      for (const review of loadedReviews) {
-        if (review.has_reply) {
-          initialStatuses[review.id] =
-            "posted";
-        }
-      }
-
-      setStatuses(initialStatuses);
-    } catch (error) {
-      setReviews([]);
-      setPabblyConnected(false);
-
-      setGoogleError(
-        getErrorMessage(
-          error,
-          "Unable to fetch reviews."
         )
       );
     } finally {
@@ -410,9 +319,8 @@ export default function Home() {
     setGeneratingAll(false);
   }
 
-  // Reviews that don't have a drafted or posted reply yet
-  // (a failed generation counts as still-pending so it's
-  // picked up again by the next batch).
+  // Reviews with no reply yet (a failed generation counts as
+  // still-pending so the next batch picks it up again).
   const pendingReviews = reviews.filter((review) => {
     const status = statuses[review.id];
     return !status || status === "error";
@@ -424,18 +332,101 @@ export default function Home() {
     );
   }
 
-  async function postAllReplies() {
-    if (!googleConnected && !pabblyConnected) {
-      setGoogleError(
-        "Fetch reviews (or connect Google Business Profile) before posting replies."
-      );
+  async function approveReply(
+    review: Review
+  ) {
+    const replyText = (
+      replies[review.id] || ""
+    ).trim();
 
+    if (!replyText) {
       return;
     }
 
+    try {
+      const response = await fetch(
+        `${API_URL}/approve-reply`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            review_id: review.id,
+            reply: replyText,
+          }),
+        }
+      );
+
+      const data =
+        await response.json();
+
+      if (!response.ok || data.error) {
+        throw new Error(
+          data.error ||
+            "Could not approve this reply."
+        );
+      }
+
+      setStatuses((old) => ({
+        ...old,
+        [review.id]: "approved",
+      }));
+
+      setErrors((old) => ({
+        ...old,
+        [review.id]: "",
+      }));
+    } catch (error) {
+      setErrors((old) => ({
+        ...old,
+        [review.id]:
+          getErrorMessage(
+            error,
+            "Could not approve this reply."
+          ),
+      }));
+    }
+  }
+
+  function editReply(
+    reviewId: string,
+    value: string
+  ) {
+    setReplies((old) => ({
+      ...old,
+      [reviewId]: value,
+    }));
+
+    // Editing an already-approved reply means the approval no
+    // longer covers the current text -- it needs a fresh approve.
+    setStatuses((old) =>
+      old[reviewId] === "approved"
+        ? { ...old, [reviewId]: "draft" }
+        : old
+    );
+  }
+
+  function skipReply(
+    reviewId: string
+  ) {
+    setStatuses((old) => ({
+      ...old,
+      [reviewId]: "skipped",
+    }));
+
+    setErrors((old) => ({
+      ...old,
+      [reviewId]: "",
+    }));
+  }
+
+  async function postApprovedReplies() {
     if (
-      googleConnected &&
-      (!googleAccountId || !googleLocationId)
+      !googleConnected ||
+      !googleAccountId ||
+      !googleLocationId
     ) {
       setGoogleError(
         "Connect Google Business Profile before posting replies."
@@ -444,21 +435,21 @@ export default function Home() {
       return;
     }
 
-    const draftReviews =
+    const approvedReviews =
       reviews.filter(
         (review) =>
           statuses[review.id] ===
-          "draft"
+          "approved"
       );
 
-    if (!draftReviews.length) {
+    if (!approvedReviews.length) {
       return;
     }
 
     const confirmed =
       window.confirm(
-        `Post ${draftReviews.length} repl${
-          draftReviews.length === 1
+        `Post ${approvedReviews.length} approved repl${
+          approvedReviews.length === 1
             ? "y"
             : "ies"
         } to Google Business Profile?\n\nThis action will publish them publicly.`
@@ -471,47 +462,27 @@ export default function Home() {
     setPosting(true);
     setGoogleError("");
 
-    for (const review of draftReviews) {
+    for (const review of approvedReviews) {
       try {
-        const endpoint = googleConnected
-          ? `${API_URL}/post-reply`
-          : `${API_URL}/pabbly/post-reply`;
-
-        const body = googleConnected
-          ? {
+        const response = await fetch(
+          `${API_URL}/post-reply`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
               account_id:
                 googleAccountId,
               location_id:
                 googleLocationId,
-              review_id:
-                review.id,
+              review_id: review.id,
               reply:
-                replies[
-                  review.id
-                ],
-            }
-          : {
-              review_id:
-                review.id,
-              reply:
-                replies[
-                  review.id
-                ],
-            };
-
-        const response =
-          await fetch(
-            endpoint,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type":
-                  "application/json",
-              },
-              body:
-                JSON.stringify(body),
-            }
-          );
+                replies[review.id],
+            }),
+          }
+        );
 
         const data =
           await response.json();
@@ -534,8 +505,7 @@ export default function Home() {
 
         setStatuses((old) => ({
           ...old,
-          [review.id]:
-            "posted",
+          [review.id]: "posted",
         }));
 
         setErrors((old) => ({
@@ -545,8 +515,7 @@ export default function Home() {
       } catch (error) {
         setStatuses((old) => ({
           ...old,
-          [review.id]:
-            "error",
+          [review.id]: "error",
         }));
 
         setErrors((old) => ({
@@ -563,181 +532,148 @@ export default function Home() {
     setPosting(false);
   }
 
-  function skipReply(
-    reviewId: string
-  ) {
-    setStatuses((old) => ({
-      ...old,
-      [reviewId]: "skipped",
-    }));
-
-    setErrors((old) => ({
-      ...old,
-      [reviewId]: "",
-    }));
-  }
-
   const draftedCount =
     Object.values(statuses).filter(
-      (status) =>
-        status === "draft"
+      (status) => status === "draft"
+    ).length;
+
+  const approvedCount =
+    Object.values(statuses).filter(
+      (status) => status === "approved"
     ).length;
 
   const postedCount =
     Object.values(statuses).filter(
-      (status) =>
-        status === "posted"
+      (status) => status === "posted"
     ).length;
 
   const unansweredCount =
     reviews.filter(
       (review) =>
-        statuses[review.id] !==
-        "posted"
+        statuses[review.id] !== "posted"
     ).length;
 
   const attentionCount =
     reviews.filter(
       (review) =>
         review.rating <= 2 &&
-        statuses[review.id] !==
-          "posted"
+        statuses[review.id] !== "posted"
     ).length;
 
   const visibleReviews =
-    reviews.filter(
-      (review) => {
-        const status =
-          statuses[
-            review.id
-          ];
+    reviews.filter((review) => {
+      const status =
+        statuses[review.id];
 
-        const statusMatches =
-          filter === "all"
-            ? true
-            : filter ===
-              "unanswered"
-            ? status !== "posted"
-            : filter ===
-              "attention"
-            ? review.rating <=
-                2 &&
-              status !== "posted"
-            : status === filter;
+      const statusMatches =
+        filter === "all"
+          ? true
+          : filter === "unanswered"
+          ? status !== "posted"
+          : filter === "attention"
+          ? review.rating <= 2 &&
+            status !== "posted"
+          : status === filter;
 
-        const ratingMatches =
-          ratingFilter === "all"
-            ? true
-            : review.rating ===
-              ratingFilter;
+      const ratingMatches =
+        ratingFilter === "all"
+          ? true
+          : review.rating ===
+            ratingFilter;
 
-        return (
-          statusMatches &&
-          ratingMatches
-        );
-      }
-    );
-
-  const hasFetched =
-    googleConnected || pabblyConnected;
+      return (
+        statusMatches && ratingMatches
+      );
+    });
 
   return (
-    <main className="min-h-screen bg-white text-[#171a20]">
-      <header className="border-b border-black/10">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5 md:px-10">
-          <div className="text-lg font-semibold tracking-[-0.02em]">
-            Smart Reviews
-          </div>
-
-          <div className="hidden text-sm text-black/40 sm:block">
-            Review operations
-          </div>
-        </div>
-      </header>
-
-      <section className="mx-auto max-w-7xl px-6 pb-16 pt-20 md:px-10 md:pt-28">
-        <div className="max-w-4xl">
-          <p className="text-xs font-medium uppercase tracking-[0.22em] text-black/35">
-            AI-assisted review management
-          </p>
-
-          <h1 className="mt-5 text-5xl font-medium leading-[0.95] tracking-[-0.045em] md:text-7xl">
-            Every review.
+    <main className="min-h-screen bg-[#FAFAF8] text-[#0B0C10]">
+      <section className="relative overflow-hidden bg-[#0B0C10] text-[#FAFAF8]">
+        <div className="mx-auto max-w-7xl px-6 pb-20 pt-16 md:px-10 md:pb-28 md:pt-20">
+          <h1 className="text-[15vw] font-[900] leading-[0.86] tracking-[-0.05em] sm:text-[96px] md:text-[124px]">
+            SMART
             <br />
-            One clear workflow.
+            REVIEWS
           </h1>
 
-          <p className="mt-8 max-w-2xl text-lg leading-8 text-black/50 md:text-xl">
-            Fetch your reviews, generate
-            replies, edit anything that
-            needs it, and publish everything
+          <p className="mt-5 text-sm text-white/45">
+            Built by Dr. Abhinav Rao and Agents
+          </p>
+
+          <p className="mt-10 max-w-xl text-lg leading-8 text-white/70 md:text-xl">
+            Connect your Google Business Profile,
+            generate replies in batches, approve
+            what&apos;s right, and publish everything
             in one click.
           </p>
-        </div>
 
-        <div className="mt-10 flex flex-wrap items-center gap-3">
-          <button
-            onClick={
-              loadPabblyReviews
-            }
-            disabled={loadingReviews}
-            className={
-              pabblyConnected
-                ? "border border-green-700 bg-green-50 px-6 py-3 text-sm font-medium text-green-800"
-                : "bg-[#171a20] px-6 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-black/20"
-            }
-          >
-            {loadingReviews
-              ? "Fetching..."
-              : pabblyConnected
-              ? "✓ Reviews fetched -- Refresh"
-              : "Fetch Reviews"}
-          </button>
-
-          <button
-            onClick={() => {
-              window.location.href =
-                `${API_URL}/auth/google`;
-            }}
-            className={
-              googleConnected
-                ? "border border-green-700 bg-green-50 px-6 py-3 text-sm font-medium text-green-800"
-                : "border border-black/20 px-6 py-3 text-sm font-medium transition hover:bg-[#171a20] hover:text-white"
-            }
-          >
-            {googleConnected
-              ? "✓ Google Business Profile Connected"
-              : "Connect Google Business Profile directly"}
-          </button>
-
-          {googleConnected && (
+          <div className="mt-10 flex flex-wrap items-center gap-4">
             <button
               onClick={
                 loadGoogleReviews
               }
-              className="border border-black/20 px-6 py-3 text-sm font-medium transition hover:bg-[#171a20] hover:text-white"
+              disabled={
+                loadingReviews
+              }
+              className="bg-[#3552FF] px-7 py-3.5 text-sm font-semibold text-white transition hover:bg-[#2A42D6] disabled:cursor-not-allowed disabled:bg-white/20"
             >
-              Refresh
+              {loadingReviews
+                ? "Connecting..."
+                : googleConnected
+                ? "Reconnect Google Business Profile"
+                : "Connect Google Business Profile"}
             </button>
-          )}
 
-          <button
-            onClick={
-              loadDemoReviews
-            }
-            className="px-2 py-3 text-sm text-black/35 underline-offset-2 hover:underline"
-          >
-            Preview with sample data
-          </button>
-        </div>
-
-        {googleError && (
-          <div className="mt-5 max-w-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            {googleError}
+            {googleConnected && (
+              <button
+                onClick={
+                  loadGoogleReviews
+                }
+                disabled={
+                  loadingReviews
+                }
+                className="border border-white/25 px-7 py-3.5 text-sm font-semibold text-white transition hover:border-white/50"
+              >
+                Refresh reviews
+              </button>
+            )}
           </div>
-        )}
 
-        <div className="mt-6 flex flex-wrap gap-3">
+          {googleError && (
+            <div className="mt-6 max-w-xl border border-red-400/40 bg-red-500/10 p-4 text-sm text-red-200">
+              {googleError}
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="border-b border-black/10 bg-white">
+        <div className="mx-auto grid max-w-7xl grid-cols-2 md:grid-cols-5">
+          <Stat
+            label="Reviews"
+            value={reviews.length}
+          />
+          <Stat
+            label="Pending"
+            value={pendingReviews.length}
+          />
+          <Stat
+            label="Drafts"
+            value={draftedCount}
+          />
+          <Stat
+            label="Approved"
+            value={approvedCount}
+          />
+          <Stat
+            label="Posted"
+            value={postedCount}
+          />
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-6 pt-10 md:px-10">
+        <div className="flex flex-wrap gap-3">
           <button
             onClick={
               generateNextBatch
@@ -746,7 +682,7 @@ export default function Home() {
               generatingAll ||
               pendingReviews.length === 0
             }
-            className="bg-[#171a20] px-6 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-black/20"
+            className="bg-[#0B0C10] px-6 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-black/20"
           >
             {generatingAll
               ? `Generating ${generationProgress.current}/${generationProgress.total}`
@@ -762,27 +698,27 @@ export default function Home() {
 
           <button
             onClick={
-              postAllReplies
+              postApprovedReplies
             }
             disabled={
               posting ||
-              draftedCount === 0 ||
-              !hasFetched
+              approvedCount === 0 ||
+              !googleConnected
             }
-            className="border border-black/20 px-6 py-3 text-sm font-medium disabled:opacity-30"
+            className="border border-[#0B0C10]/20 px-6 py-3 text-sm font-semibold disabled:opacity-30"
           >
             {posting
               ? "Posting..."
-              : `Post All Replies${
-                  draftedCount
-                    ? ` (${draftedCount})`
+              : `Post Approved${
+                  approvedCount
+                    ? ` (${approvedCount})`
                     : ""
                 }`}
           </button>
         </div>
 
         {pendingReviews.length > BATCH_SIZE && (
-          <p className="mt-3 text-xs text-black/35">
+          <p className="mt-3 text-sm text-[#63666D]">
             {pendingReviews.length} reviews still
             need replies -- click Generate Reviews
             again after this batch finishes.
@@ -790,37 +726,10 @@ export default function Home() {
         )}
       </section>
 
-      <section className="border-y border-black/10 bg-[#f5f5f5]">
-        <div className="mx-auto grid max-w-7xl grid-cols-2 md:grid-cols-4">
-          <Stat
-            label="Reviews"
-            value={reviews.length}
-          />
-          <Stat
-            label="Pending"
-            value={pendingReviews.length}
-          />
-          <Stat
-            label="Drafts"
-            value={draftedCount}
-          />
-          <Stat
-            label="Posted"
-            value={postedCount}
-          />
-        </div>
-      </section>
-
       <section className="mx-auto max-w-7xl px-6 py-16 md:px-10">
-        <div className="mb-8">
-          <p className="text-xs font-medium uppercase tracking-[0.2em] text-black/35">
-            Inbox
-          </p>
-
-          <h2 className="mt-3 text-3xl font-medium">
-            Reviews
-          </h2>
-        </div>
+        <h2 className="mb-8 text-3xl font-bold tracking-[-0.02em]">
+          Reviews
+        </h2>
 
         <div className="mb-5 flex flex-wrap gap-2">
           <FilterButton
@@ -834,26 +743,20 @@ export default function Home() {
           <FilterButton
             label={`Unanswered (${unansweredCount})`}
             active={
-              filter ===
-              "unanswered"
+              filter === "unanswered"
             }
             onClick={() =>
-              setFilter(
-                "unanswered"
-              )
+              setFilter("unanswered")
             }
           />
 
           <FilterButton
             label={`Needs attention (${attentionCount})`}
             active={
-              filter ===
-              "attention"
+              filter === "attention"
             }
             onClick={() =>
-              setFilter(
-                "attention"
-              )
+              setFilter("attention")
             }
           />
 
@@ -868,14 +771,22 @@ export default function Home() {
           />
 
           <FilterButton
+            label={`Approved (${approvedCount})`}
+            active={
+              filter === "approved"
+            }
+            onClick={() =>
+              setFilter("approved")
+            }
+          />
+
+          <FilterButton
             label={`Posted (${postedCount})`}
             active={
               filter === "posted"
             }
             onClick={() =>
-              setFilter(
-                "posted"
-              )
+              setFilter("posted")
             }
           />
         </div>
@@ -912,20 +823,20 @@ export default function Home() {
         </div>
 
         {loadingReviews ? (
-          <div className="border-t border-black/10 py-20 text-sm text-black/40">
+          <div className="border-t border-black/10 py-20 text-sm text-[#63666D]">
             Loading reviews...
           </div>
         ) : visibleReviews.length ===
           0 ? (
-          <div className="border-t border-black/10 py-20 text-sm text-black/40">
+          <div className="border-t border-black/10 py-20 text-sm text-[#63666D]">
             {reviews.length === 0
-              ? "No reviews loaded yet -- click \u201cFetch Reviews\u201d above."
+              ? "No reviews loaded yet -- connect your Google Business Profile above."
               : "No reviews found."}
           </div>
         ) : (
           <div className="border-t border-black/10">
             {visibleReviews.map(
-              (review, index) => {
+              (review) => {
                 const status =
                   statuses[
                     review.id
@@ -937,20 +848,10 @@ export default function Home() {
                     className="grid gap-8 border-b border-black/10 py-10 md:grid-cols-[210px_1fr]"
                   >
                     <div>
-                      <p className="text-sm font-medium">
+                      <p className="text-sm font-semibold">
                         {
                           review.reviewer
                         }
-                      </p>
-
-                      <p className="mt-2 text-xs text-black/35">
-                        Review{" "}
-                        {String(
-                          index + 1
-                        ).padStart(
-                          2,
-                          "0"
-                        )}
                       </p>
 
                       <div className="mt-5 text-sm">
@@ -969,7 +870,7 @@ export default function Home() {
                         2 &&
                         status !==
                           "posted" && (
-                          <p className="mt-3 text-xs font-medium uppercase tracking-wide text-red-600">
+                          <p className="mt-3 text-xs font-semibold text-red-600">
                             Needs attention
                           </p>
                         )}
@@ -994,9 +895,9 @@ export default function Home() {
                         status ===
                           "posted" && (
                           <div className="mt-7 border-l-2 border-black/15 pl-5">
-                            <p className="text-xs uppercase text-black/35">
-                              Existing Google
-                              reply
+                            <p className="text-xs text-[#63666D]">
+                              Existing reply
+                              from Google
                             </p>
 
                             <p className="mt-3 text-base leading-7 text-black/60">
@@ -1022,7 +923,7 @@ export default function Home() {
                               status ===
                               "generating"
                             }
-                            className="mt-7 border-b border-black pb-1 text-sm font-medium disabled:opacity-30"
+                            className="mt-7 border-b-2 border-[#3552FF] pb-1 text-sm font-semibold text-[#3552FF] disabled:opacity-30"
                           >
                             {status ===
                             "generating"
@@ -1035,7 +936,7 @@ export default function Home() {
                         review.id
                       ] && (
                         <div className="mt-8">
-                          <p className="mb-3 text-xs uppercase text-black/35">
+                          <p className="mb-3 text-sm text-[#63666D]">
                             Suggested reply
                           </p>
 
@@ -1045,25 +946,41 @@ export default function Home() {
                                 review.id
                               ]
                             }
-                            onChange={(e) => {
-                              setReplies(
-                                (old) => ({
-                                  ...old,
-                                  [review.id]:
-                                    e
-                                      .target
-                                      .value,
-                                })
-                              );
-                            }}
+                            onChange={(e) =>
+                              editReply(
+                                review.id,
+                                e.target
+                                  .value
+                              )
+                            }
                             disabled={
                               status ===
                               "posted"
                             }
-                            className="min-h-36 w-full resize-y border border-black/15 p-5"
+                            className="min-h-36 w-full resize-y border border-black/15 p-5 focus:border-[#3552FF] focus:outline-none"
                           />
 
                           <div className="mt-4 flex flex-wrap gap-3">
+                            <button
+                              onClick={() =>
+                                approveReply(
+                                  review
+                                )
+                              }
+                              disabled={
+                                status ===
+                                  "posted" ||
+                                status ===
+                                  "approved"
+                              }
+                              className="bg-[#0B0C10] px-5 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-black/20"
+                            >
+                              {status ===
+                              "approved"
+                                ? "Approved"
+                                : "Approve"}
+                            </button>
+
                             <button
                               onClick={() =>
                                 skipReply(
@@ -1091,7 +1008,7 @@ export default function Home() {
                                 status ===
                                   "generating"
                               }
-                              className="px-2 py-2.5 text-sm text-black/40 disabled:opacity-30"
+                              className="px-2 py-2.5 text-sm text-[#63666D] disabled:opacity-30"
                             >
                               Regenerate
                             </button>
@@ -1131,11 +1048,11 @@ function Stat({
 }) {
   return (
     <div className="border-r border-black/10 px-6 py-7">
-      <div className="text-3xl font-medium">
+      <div className="text-3xl font-bold">
         {value}
       </div>
 
-      <div className="mt-1 text-xs uppercase text-black/35">
+      <div className="mt-1 text-sm text-[#63666D]">
         {label}
       </div>
     </div>
@@ -1156,8 +1073,8 @@ function FilterButton({
       onClick={onClick}
       className={
         active
-          ? "bg-[#171a20] px-4 py-2 text-sm text-white"
-          : "border border-black/15 px-4 py-2 text-sm text-black/55"
+          ? "bg-[#0B0C10] px-4 py-2 text-sm font-medium text-white"
+          : "border border-black/15 px-4 py-2 text-sm text-[#63666D]"
       }
     >
       {label}
@@ -1177,21 +1094,17 @@ function StatusBadge({
     return null;
   }
 
-  const labels: Record<
-    string,
-    string
-  > = {
+  const labels: Record<string, string> = {
     draft: "Draft",
+    approved: "Approved",
     skipped: "Skipped",
     posted: "Posted",
-    generating:
-      "Generating",
+    generating: "Generating",
   };
 
   return (
-    <span className="text-xs uppercase text-black/40">
-      {labels[status] ||
-        status}
+    <span className="text-sm text-[#63666D]">
+      {labels[status] || status}
     </span>
   );
 }
