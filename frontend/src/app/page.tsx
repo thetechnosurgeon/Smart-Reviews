@@ -11,6 +11,12 @@ type Review = {
   existing_reply?: string;
 };
 
+type Location = {
+  id: string;
+  title: string;
+  address: string;
+};
+
 type Filter =
   | "all"
   | "unanswered"
@@ -28,11 +34,6 @@ type RatingFilter =
   | 5;
 
 const BATCH_SIZE = 25;
-
-// This account has more than one Google Business Profile location on it.
-// Reviews only live under this one -- if it's ever missing from the
-// account's location list, we fall back to the first one returned.
-const PRIMARY_LOCATION_ID = "9505403968657639010";
 
 export default function Home() {
   const API_URL =
@@ -70,6 +71,12 @@ export default function Home() {
 
   const [googleError, setGoogleError] =
     useState("");
+
+  const [locations, setLocations] =
+    useState<Location[]>([]);
+
+  const [showLocationPicker, setShowLocationPicker] =
+    useState(false);
 
   const [filter, setFilter] =
     useState<Filter>("all");
@@ -165,23 +172,71 @@ export default function Home() {
         );
       }
 
-      const matchedLocation =
-        locationData.locations.find(
-          (loc: { name: string }) =>
-            loc.name?.replace(
+      const parsedLocations: Location[] =
+        locationData.locations.map(
+          (loc: {
+            name: string;
+            title?: string;
+            storefrontAddress?: {
+              addressLines?: string[];
+              locality?: string;
+            };
+          }) => ({
+            id: loc.name.replace(
               "locations/",
               ""
-            ) === PRIMARY_LOCATION_ID
-        ) || locationData.locations[0];
-
-      const locationId =
-        matchedLocation.name.replace(
-          "locations/",
-          ""
+            ),
+            title:
+              loc.title ||
+              "Untitled location",
+            address: [
+              loc.storefrontAddress?.addressLines?.join(
+                ", "
+              ),
+              loc.storefrontAddress
+                ?.locality,
+            ]
+              .filter(Boolean)
+              .join(", "),
+          })
         );
 
-      setGoogleLocationId(locationId);
+      setLocations(parsedLocations);
 
+      if (parsedLocations.length === 1) {
+        await loadReviewsForLocation(
+          accountId,
+          parsedLocations[0].id
+        );
+      } else {
+        setShowLocationPicker(true);
+        setLoadingReviews(false);
+      }
+    } catch (error) {
+      console.error(error);
+      setReviews([]);
+      setGoogleConnected(false);
+
+      setGoogleError(
+        getErrorMessage(
+          error,
+          "Unable to load Google reviews."
+        )
+      );
+      setLoadingReviews(false);
+    }
+  }
+
+  async function loadReviewsForLocation(
+    accountId: string,
+    locationId: string
+  ) {
+    setLoadingReviews(true);
+    setShowLocationPicker(false);
+    setGoogleLocationId(locationId);
+    resetWorkflow();
+
+    try {
       const reviewResponse = await fetch(
         `${API_URL}/reviews/${accountId}/${locationId}`
       );
@@ -604,13 +659,21 @@ export default function Home() {
     <main className="min-h-screen bg-[#FAFAF8] text-[#0B0C10]">
       <section className="relative overflow-hidden bg-[#0B0C10] text-[#FAFAF8]">
         <div className="mx-auto max-w-7xl px-6 pb-20 pt-16 md:px-10 md:pb-28 md:pt-20">
-          <h1 className="text-[15vw] font-[900] leading-[0.86] tracking-[-0.05em] sm:text-[96px] md:text-[124px]">
-            SMART
-            <br />
-            REVIEWS
-          </h1>
+          <div className="flex items-center gap-4 md:gap-6">
+            <BrandMark className="h-14 w-14 shrink-0 md:h-24 md:w-24" />
 
-          <p className="mt-5 text-sm text-white/45">
+            <h1 className="text-[15vw] font-[900] leading-[0.86] tracking-[-0.05em] sm:text-[96px] md:text-[124px]">
+              SMART
+              <br />
+              REPUTE
+            </h1>
+          </div>
+
+          <p className="mt-6 text-lg font-medium text-white/80 md:text-xl">
+            Your AI Reputation Manager
+          </p>
+
+          <p className="mt-2 text-sm text-white/45">
             Built by Dr. Abhinav Rao and Agents
           </p>
 
@@ -641,8 +704,11 @@ export default function Home() {
 
             {googleConnected && (
               <button
-                onClick={
-                  loadGoogleReviews
+                onClick={() =>
+                  loadReviewsForLocation(
+                    googleAccountId,
+                    googleLocationId
+                  )
                 }
                 disabled={
                   loadingReviews
@@ -652,11 +718,61 @@ export default function Home() {
                 Refresh reviews
               </button>
             )}
+
+            {googleConnected &&
+              locations.length > 1 && (
+                <button
+                  onClick={
+                    loadGoogleReviews
+                  }
+                  disabled={
+                    loadingReviews
+                  }
+                  className="px-2 py-3.5 text-sm text-white/50 underline-offset-2 hover:underline"
+                >
+                  Switch business
+                </button>
+              )}
           </div>
 
           {googleError && (
             <div className="mt-6 max-w-xl border border-red-400/40 bg-red-500/10 p-4 text-sm text-red-200">
               {googleError}
+            </div>
+          )}
+
+          {showLocationPicker && (
+            <div className="mt-6 max-w-xl border border-white/20 bg-white/5 p-5">
+              <p className="mb-4 text-sm font-semibold text-white">
+                This account manages more
+                than one business -- choose
+                one:
+              </p>
+
+              <div className="flex flex-col gap-2">
+                {locations.map((loc) => (
+                  <button
+                    key={loc.id}
+                    onClick={() =>
+                      loadReviewsForLocation(
+                        googleAccountId,
+                        loc.id
+                      )
+                    }
+                    className="border border-white/20 px-4 py-3 text-left transition hover:border-[#3552FF]"
+                  >
+                    <div className="text-sm font-medium text-white">
+                      {loc.title}
+                    </div>
+
+                    {loc.address && (
+                      <div className="mt-0.5 text-xs text-white/50">
+                        {loc.address}
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -870,9 +986,11 @@ export default function Home() {
                       </p>
 
                       <div className="mt-5 text-sm">
-                        {"★".repeat(
-                          review.rating
-                        )}
+                        <span className="text-[#F5B700]">
+                          {"★".repeat(
+                            review.rating
+                          )}
+                        </span>
                         <span className="text-black/15">
                           {"★".repeat(
                             5 -
@@ -1051,6 +1169,72 @@ export default function Home() {
         )}
       </section>
     </main>
+  );
+}
+
+function BrandMark({
+  className,
+}: {
+  className?: string;
+}) {
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+    >
+      <defs>
+        <path
+          id="rp-star"
+          d="M0,-10 L2.35,-3.24 L9.51,-3.09 L3.80,1.24 L5.88,8.09 L0,4 L-5.88,8.09 L-3.80,1.24 L-9.51,-3.09 L-2.35,-3.24 Z"
+        />
+      </defs>
+
+      <line
+        x1="10"
+        y1="86"
+        x2="82"
+        y2="16"
+        stroke="#3552FF"
+        strokeWidth="4"
+        strokeLinecap="round"
+      />
+
+      <path
+        d="M82,16 L69,16 M82,16 L82,29"
+        stroke="#3552FF"
+        strokeWidth="4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      <use
+        href="#rp-star"
+        transform="translate(14,84) scale(0.55)"
+        fill="#3552FF"
+      />
+      <use
+        href="#rp-star"
+        transform="translate(31,67) scale(0.7)"
+        fill="#3552FF"
+      />
+      <use
+        href="#rp-star"
+        transform="translate(48,50) scale(0.85)"
+        fill="#3552FF"
+      />
+      <use
+        href="#rp-star"
+        transform="translate(65,33) scale(1.0)"
+        fill="#3552FF"
+      />
+      <use
+        href="#rp-star"
+        transform="translate(84,15) scale(1.15)"
+        fill="#3552FF"
+      />
+    </svg>
   );
 }
 

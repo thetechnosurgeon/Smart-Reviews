@@ -16,15 +16,8 @@ GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
 GOOGLE_REDIRECT_URI = "https://smart-reviews.onrender.com/auth/google/callback"
 GOOGLE_SCOPE = "https://www.googleapis.com/auth/business.manage"
 
-FRONTEND_URL = "https://smartreviews-mcjc.onrender.com"
-
-# Optional custom tone guidance per review type. Set these on Render if you
-# want to steer replies for that bucket -- e.g. NEGATIVE_REPLY_NOTES="always
-# invite them to call the front desk directly". Leave unset for no change
-# from the default behaviour. 4-5 stars = positive, 3 = neutral, 1-2 = negative.
-POSITIVE_REPLY_NOTES = os.getenv("POSITIVE_REPLY_NOTES", "").strip()
-NEUTRAL_REPLY_NOTES = os.getenv("NEUTRAL_REPLY_NOTES", "").strip()
-NEGATIVE_REPLY_NOTES = os.getenv("NEGATIVE_REPLY_NOTES", "").strip()
+FRONTEND_URL = "https://www.smartrepute.com"
+OLD_FRONTEND_URL = "https://smartreviews-mcjc.onrender.com"
 
 RATING_MAP = {
     "ONE": 1,
@@ -55,6 +48,8 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         FRONTEND_URL,
+        "https://smartrepute.com",
+        OLD_FRONTEND_URL,
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -138,25 +133,10 @@ def generate_reply(data: ReviewRequest):
             else "NO WRITTEN COMMENT"
         )
 
-        if data.rating >= 4:
-            custom_notes = POSITIVE_REPLY_NOTES
-        elif data.rating == 3:
-            custom_notes = NEUTRAL_REPLY_NOTES
-        else:
-            custom_notes = NEGATIVE_REPLY_NOTES
-
-        custom_notes_block = (
-            f"\nADDITIONAL GUIDANCE FOR THIS REVIEW TYPE (from the "
-            f"business owner -- follow it, but never let it override "
-            f"the strict factual/privacy rules above):\n{custom_notes}\n"
-            if custom_notes
-            else ""
-        )
-
         prompt = f"""
 You write public Google Business Profile replies for a healthcare organisation.
 
-Write ONE reply only.
+Write ONE complete reply only.
 
 Reviewer name:
 {data.reviewer}
@@ -198,6 +178,7 @@ STYLE:
 - Avoid repetitive customer-service phrases.
 - You may use the reviewer's first name naturally, but not every reply needs it.
 - Vary wording and sentence structure between replies.
+- Do NOT reuse the reviewer's exact words or phrases from their review. Restate their point in your own words -- echoing their own sentences back reads as robotic and insincere, even if the words are accurate.
 
 RATING GUIDANCE:
 
@@ -224,7 +205,7 @@ NO WRITTEN COMMENT:
 - Mention only the star rating or thank them for leaving a rating.
 - Do not describe what they liked.
 - Do not infer anything about their experience.
-{custom_notes_block}
+
 Write the reply now.
 """
 
