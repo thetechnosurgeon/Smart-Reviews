@@ -1,23 +1,65 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
-from openai import OpenAI
+import logging
 import os
-import requests
-from urllib.parse import urlencode
+from contextlib import asynccontextmanager
+from typing import Optional
 
-app = FastAPI()
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, RedirectResponse
+from openai import OpenAI
+from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-google_tokens = {}
+import db
+import google_auth
+import security
 
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
-GOOGLE_REDIRECT_URI = "https://smart-reviews.onrender.com/auth/google/callback"
-GOOGLE_SCOPE = "https://www.googleapis.com/auth/business.manage"
+logger = logging.getLogger("smartrepute")
 
-FRONTEND_URL = "https://www.smartrepute.com"
+# Where this API is reachable, and where the website lives.
+API_BASE_URL = os.getenv(
+    "API_BASE_URL", "https://smart-reviews.onrender.com"
+).rstrip("/")
+
+FRONTEND_URL = os.getenv(
+    "FRONTEND_URL", "https://www.smartrepute.com"
+).rstrip("/")
+
 OLD_FRONTEND_URL = "https://smartreviews-mcjc.onrender.com"
+
+# Login cookies. "lax" is right once the API lives on a subdomain of the
+# same site as the website (api.smartrepute.com). Only use "none" as a
+# temporary fallback while the API is still on onrender.com.
+SESSION_COOKIE = "sr_session"
+STATE_COOKIE = "sr_oauth_state"
+
+COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax").strip().lower()
+
+if COOKIE_SAMESITE not in ("lax", "none"):
+    COOKIE_SAMESITE = "lax"
+
+COOKIE_SECURE = (
+    API_BASE_URL.startswith("https://") or COOKIE_SAMESITE == "none"
+)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        db.init_db()
+    except Exception:
+        logger.exception("Could not initialise the database")
+
+    if not security.secret_is_configured():
+        logger.error(
+            "APP_SECRET is missing or shorter than 32 characters. "
+            "Sign-in will not work until it is set."
+        )
+
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 RATING_MAP = {
     "ONE": 1,
@@ -37,9 +79,16 @@ def normalize_rating(raw_rating) -> int:
     except (TypeError, ValueError):
         return 0
 
+
+# The AI provider is configurable from the server's environment so it
+# can be switched without a code change.
+AI_MODEL = os.getenv("AI_MODEL", "openai/gpt-oss-20b")
+
 client = OpenAI(
-    api_key=os.getenv("GROQ_API_KEY"),
-    base_url="https://api.groq.com/openai/v1",
+    api_key=os.getenv("AI_API_KEY") or os.getenv("GROQ_API_KEY"),
+    base_url=os.getenv(
+        "AI_BASE_URL", "https://api.groq.com/openai/v1"
+    ),
 )
 
 app.add_middleware(
@@ -55,6 +104,74 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Every error the frontend sees keeps the same {"error": ...} shape.
+@app.exception_handler(StarletteHTTPException)
+async def http_error_handler(request: Request, exc: StarletteHTTPException):
+    return JSONResponse(
+        {"error": exc.detail}, status_code=exc.status_code
+    )
+
+
+@app.exception_handler(google_auth.GoogleAuthError)
+async def google_error_handler(
+    request: Request, exc: google_auth.GoogleAuthError
+):
+    return JSONResponse(
+        {"error": exc.message, "code": exc.code},
+        status_code=exc.status,
+    )
+
+
+@app.exception_handler(security.SecretNotConfigured)
+async def secret_error_handler(
+    request: Request, exc: security.SecretNotConfigured
+):
+    return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+def current_account(request: Request) -> dict:
+    """The signed-in business owner, or a 401."""
+    account_id = security.read_session_token(
+        request.cookies.get(SESSION_COOKIE)
+    )
+
+    account = db.get_account(account_id) if account_id else None
+
+    if not account:
+        raise HTTPException(status_code=401, detail="Not signed in")
+
+    return account
+
+
+def _set_cookie(response, key: str, value: str, max_age: int) -> None:
+    response.set_cookie(
+        key,
+        value,
+        max_age=max_age,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        path="/",
+    )
+
+
+def _clear_cookie(response, key: str) -> None:
+    response.delete_cookie(
+        key,
+        path="/",
+        secure=COOKIE_SECURE,
+        httponly=True,
+        samesite=COOKIE_SAMESITE,
+    )
+
+
+def _json_or_message(response) -> dict:
+    try:
+        return response.json()
+    except Exception:
+        return {"message": response.text}
 
 
 class ReviewRequest(BaseModel):
@@ -78,7 +195,17 @@ class PostReplyRequest(BaseModel):
 @app.get("/")
 def home():
     return {
-        "message": "Smart Reviews backend is alive"
+        "message": "Smart Repute backend is alive"
+    }
+
+
+@app.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "database": db.database_label(),
+        "app_secret_set": security.secret_is_configured(),
+        "google_client_configured": google_auth.client_is_configured(),
     }
 
 
@@ -121,7 +248,10 @@ def get_reviews():
 
 
 @app.post("/generate-reply")
-def generate_reply(data: ReviewRequest):
+def generate_reply(
+    data: ReviewRequest,
+    account: dict = Depends(current_account),
+):
     try:
         original_review = data.review.strip()
 
@@ -210,7 +340,7 @@ Write the reply now.
 """
 
         response = client.responses.create(
-            model="openai/gpt-oss-20b",
+            model=AI_MODEL,
             input=prompt,
         )
 
@@ -232,7 +362,10 @@ Write the reply now.
 
 
 @app.post("/approve-reply")
-def approve_reply(data: ApproveRequest):
+def approve_reply(
+    data: ApproveRequest,
+    account: dict = Depends(current_account),
+):
     if not data.reply.strip():
         return {
             "error": "Reply cannot be empty"
@@ -246,7 +379,10 @@ def approve_reply(data: ApproveRequest):
 
 
 @app.post("/post-reply")
-def post_reply(data: PostReplyRequest):
+def post_reply(
+    data: PostReplyRequest,
+    account: dict = Depends(current_account),
+):
     if not data.account_id or not data.location_id:
         return {
             "error": (
@@ -265,39 +401,20 @@ def post_reply(data: PostReplyRequest):
             "error": "Reply cannot be empty"
         }
 
-    access_token = google_tokens.get("access_token")
-
-    if not access_token:
-        return {
-            "error": (
-                "Google account is not connected. "
-                "Reconnect Google Business Profile."
-            )
-        }
-
-    response = requests.put(
+    response = google_auth.google_request(
+        account,
+        "PUT",
         (
             "https://mybusiness.googleapis.com/v4/"
             f"accounts/{data.account_id}/"
             f"locations/{data.location_id}/"
             f"reviews/{data.review_id}/reply"
         ),
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "comment": data.reply.strip()
-        },
-        timeout=30,
+        headers={"Content-Type": "application/json"},
+        json={"comment": data.reply.strip()},
     )
 
-    try:
-        result = response.json()
-    except Exception:
-        result = {
-            "message": response.text
-        }
+    result = _json_or_message(response)
 
     if response.status_code != 200:
         return {
@@ -314,82 +431,96 @@ def post_reply(data: PostReplyRequest):
 
 @app.get("/auth/google")
 def google_login():
-    params = {
-        "client_id": GOOGLE_CLIENT_ID,
-        "redirect_uri": GOOGLE_REDIRECT_URI,
-        "response_type": "code",
-        "scope": GOOGLE_SCOPE,
-        "access_type": "offline",
-        "prompt": "consent",
-    }
+    state = security.new_oauth_state()
 
-    auth_url = (
-        "https://accounts.google.com/o/oauth2/v2/auth?"
-        + urlencode(params)
-    )
+    response = RedirectResponse(google_auth.build_auth_url(state))
 
-    return RedirectResponse(auth_url)
+    _set_cookie(response, STATE_COOKIE, state, 600)
+
+    return response
 
 
 @app.get("/auth/google/callback")
-def google_callback(code: str):
-    token_response = requests.post(
-        "https://oauth2.googleapis.com/token",
-        data={
-            "code": code,
-            "client_id": GOOGLE_CLIENT_ID,
-            "client_secret": GOOGLE_CLIENT_SECRET,
-            "redirect_uri": GOOGLE_REDIRECT_URI,
-            "grant_type": "authorization_code",
-        },
-        timeout=30,
-    )
-
-    tokens = token_response.json()
-
-    if token_response.status_code != 200:
-        return {
-            "error": "Token exchange failed",
-            "details": tokens,
-        }
-
-    google_tokens["access_token"] = tokens.get(
-        "access_token"
-    )
-
-    if tokens.get("refresh_token"):
-        google_tokens["refresh_token"] = tokens.get(
-            "refresh_token"
+def google_callback(
+    request: Request,
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+):
+    def fail(reason: str):
+        response = RedirectResponse(
+            f"{FRONTEND_URL}/?auth_error={reason}"
         )
+        _clear_cookie(response, STATE_COOKIE)
+        return response
 
-    return RedirectResponse(
-        f"{FRONTEND_URL}/?connected=true"
+    if error or not code:
+        return fail("denied")
+
+    if not security.states_match(
+        state, request.cookies.get(STATE_COOKIE)
+    ):
+        return fail("state_mismatch")
+
+    try:
+        account = google_auth.complete_login(code)
+    except google_auth.GoogleAuthError as exc:
+        return fail(exc.code)
+
+    response = RedirectResponse(f"{FRONTEND_URL}/?connected=true")
+
+    _clear_cookie(response, STATE_COOKIE)
+
+    _set_cookie(
+        response,
+        SESSION_COOKIE,
+        security.create_session_token(account["id"]),
+        security.SESSION_MAX_AGE,
     )
+
+    return response
+
+
+@app.get("/me")
+def me(account: dict = Depends(current_account)):
+    return {
+        "id": account["id"],
+        "email": account["email"],
+        "name": account["name"],
+        "picture": account["picture"],
+        "connected": bool(account["refresh_token_enc"]),
+    }
+
+
+@app.post("/auth/logout")
+def logout():
+    response = JSONResponse({"status": "signed_out"})
+
+    _clear_cookie(response, SESSION_COOKIE)
+
+    return response
+
+
+@app.post("/account/disconnect")
+def disconnect_account(account: dict = Depends(current_account)):
+    google_auth.disconnect(account)
+
+    response = JSONResponse({"status": "disconnected"})
+
+    _clear_cookie(response, SESSION_COOKIE)
+
+    return response
 
 
 @app.get("/google/accounts")
-def get_google_accounts():
-    access_token = google_tokens.get("access_token")
-
-    if not access_token:
-        return {
-            "error": "Google account not connected"
-        }
-
-    response = requests.get(
+def get_google_accounts(account: dict = Depends(current_account)):
+    response = google_auth.google_request(
+        account,
+        "GET",
         "https://mybusinessaccountmanagement.googleapis.com/v1/accounts",
-        headers={
-            "Authorization": f"Bearer {access_token}"
-        },
-        timeout=30,
     )
 
-    try:
-        data = response.json()
-    except Exception:
-        data = {
-            "message": response.text
-        }
+    data = _json_or_message(response)
 
     if response.status_code != 200:
         return {
@@ -400,34 +531,23 @@ def get_google_accounts():
 
 
 @app.get("/google/locations/{account_id}")
-def get_google_locations(account_id: str):
-    access_token = google_tokens.get("access_token")
-
-    if not access_token:
-        return {
-            "error": "Google account not connected"
-        }
-
-    response = requests.get(
+def get_google_locations(
+    account_id: str,
+    account: dict = Depends(current_account),
+):
+    response = google_auth.google_request(
+        account,
+        "GET",
         (
             "https://mybusinessbusinessinformation.googleapis.com/"
             f"v1/accounts/{account_id}/locations"
         ),
-        headers={
-            "Authorization": f"Bearer {access_token}"
-        },
         params={
             "readMask": "name,title,storefrontAddress"
         },
-        timeout=30,
     )
 
-    try:
-        data = response.json()
-    except Exception:
-        data = {
-            "message": response.text
-        }
+    data = _json_or_message(response)
 
     if response.status_code != 200:
         return {
@@ -438,7 +558,7 @@ def get_google_locations(account_id: str):
 
 
 def fetch_google_reviews(
-    access_token: str,
+    account: dict,
     account_id: str,
     location_id: str,
 ):
@@ -453,25 +573,18 @@ def fetch_google_reviews(
         if page_token:
             params["pageToken"] = page_token
 
-        response = requests.get(
+        response = google_auth.google_request(
+            account,
+            "GET",
             (
                 "https://mybusiness.googleapis.com/v4/"
                 f"accounts/{account_id}/"
                 f"locations/{location_id}/reviews"
             ),
-            headers={
-                "Authorization": f"Bearer {access_token}"
-            },
             params=params,
-            timeout=30,
         )
 
-        try:
-            data = response.json()
-        except Exception:
-            data = {
-                "message": response.text
-            }
+        data = _json_or_message(response)
 
         if response.status_code != 200:
             return None, data
@@ -494,16 +607,10 @@ def fetch_google_reviews(
 def get_google_reviews(
     account_id: str,
     location_id: str,
+    account: dict = Depends(current_account),
 ):
-    access_token = google_tokens.get("access_token")
-
-    if not access_token:
-        return {
-            "error": "Google account not connected"
-        }
-
     reviews, error = fetch_google_reviews(
-        access_token,
+        account,
         account_id,
         location_id,
     )
@@ -522,16 +629,10 @@ def get_google_reviews(
 def get_reviews_for_dashboard(
     account_id: str,
     location_id: str,
+    account: dict = Depends(current_account),
 ):
-    access_token = google_tokens.get("access_token")
-
-    if not access_token:
-        return {
-            "error": "Google account not connected"
-        }
-
     reviews, error = fetch_google_reviews(
-        access_token,
+        account,
         account_id,
         location_id,
     )
@@ -584,3 +685,4 @@ def get_reviews_for_dashboard(
     return {
         "reviews": formatted_reviews
     }
+

@@ -33,7 +33,47 @@ type RatingFilter =
   | 4
   | 5;
 
+type User = {
+  id: string;
+  email: string;
+  name: string | null;
+  picture: string | null;
+  connected: boolean;
+};
+
 const BATCH_SIZE = 25;
+
+const AUTH_ERRORS: Record<string, string> = {
+  denied: "Sign-in was cancelled. Click Connect to try again.",
+  missing_business_scope:
+    "Smart Repute needs access to your Business Profile. Please try again and leave every permission ticked.",
+  state_mismatch:
+    "The sign-in session expired. Please try again.",
+  no_refresh_token:
+    "Google did not grant lasting access. Please try again.",
+  token_exchange_failed:
+    "Google rejected the sign-in. Please try again.",
+  userinfo_failed:
+    "We could not read your Google profile. Please try again.",
+};
+
+// Turns whatever the API sent back into a readable sentence.
+function describeApiError(error: unknown): string {
+  if (typeof error === "string") {
+    return error;
+  }
+
+  const e = error as {
+    message?: string;
+    error?: { message?: string };
+  };
+
+  return (
+    e?.message ||
+    e?.error?.message ||
+    JSON.stringify(error)
+  );
+}
 
 export default function Home() {
   const API_URL =
@@ -72,6 +112,12 @@ export default function Home() {
   const [googleError, setGoogleError] =
     useState("");
 
+  const [user, setUser] =
+    useState<User | null>(null);
+
+  const [authChecked, setAuthChecked] =
+    useState(false);
+
   const [locations, setLocations] =
     useState<Location[]>([]);
 
@@ -89,11 +135,116 @@ export default function Home() {
       window.location.search
     );
 
-    if (params.get("connected") === "true") {
-      setGoogleConnected(true);
-      loadGoogleReviews();
+    const authError = params.get("auth_error");
+
+    if (authError) {
+      setGoogleError(
+        AUTH_ERRORS[authError] ||
+          "Sign-in failed. Please try again."
+      );
     }
+
+    if (authError || params.get("connected")) {
+      window.history.replaceState(
+        {},
+        "",
+        window.location.pathname
+      );
+    }
+
+    checkSession();
   }, []);
+
+  // Every call to the API carries the login cookie.
+  async function apiFetch(
+    path: string,
+    init: RequestInit = {}
+  ) {
+    const response = await fetch(
+      `${API_URL}${path}`,
+      { ...init, credentials: "include" }
+    );
+
+    if (response.status === 401) {
+      setUser(null);
+      setGoogleConnected(false);
+    }
+
+    return response;
+  }
+
+  async function checkSession() {
+    try {
+      const response = await apiFetch("/me");
+
+      if (response.ok) {
+        const me: User = await response.json();
+
+        setUser(me);
+
+        if (me.connected) {
+          await loadGoogleReviews();
+        }
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setAuthChecked(true);
+    }
+  }
+
+  function clearSignedInState() {
+    setUser(null);
+    setGoogleConnected(false);
+    setReviews([]);
+    setLocations([]);
+    setShowLocationPicker(false);
+    setGoogleAccountId("");
+    setGoogleLocationId("");
+    resetWorkflow();
+  }
+
+  async function signOut() {
+    try {
+      await apiFetch("/auth/logout", { method: "POST" });
+    } finally {
+      clearSignedInState();
+      setGoogleError("");
+    }
+  }
+
+  async function disconnectAccount() {
+    const confirmed = window.confirm(
+      "Disconnect Google Business Profile?\n\nSmart Repute's access to your profile is revoked and you are signed out. You can reconnect any time."
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const response = await apiFetch(
+        "/account/disconnect",
+        { method: "POST" }
+      );
+
+      if (!response.ok) {
+        const data = await response.json();
+
+        throw new Error(describeApiError(data.error));
+      }
+
+      clearSignedInState();
+      setGoogleError("");
+    } catch (error) {
+      setGoogleError(
+        getErrorMessage(
+          error,
+          "Could not disconnect. Please try again."
+        )
+      );
+    }
+  }
 
   function getErrorMessage(
     value: unknown,
@@ -122,8 +273,8 @@ export default function Home() {
     resetWorkflow();
 
     try {
-      const accountResponse = await fetch(
-        `${API_URL}/google/accounts`
+      const accountResponse = await apiFetch(
+        "/google/accounts"
       );
 
       const accountData =
@@ -131,9 +282,7 @@ export default function Home() {
 
       if (accountData.error) {
         throw new Error(
-          accountData.error?.message ||
-          accountData.error?.error?.message ||
-          JSON.stringify(accountData.error)
+          describeApiError(accountData.error)
         );
       }
 
@@ -151,8 +300,8 @@ export default function Home() {
 
       setGoogleAccountId(accountId);
 
-      const locationResponse = await fetch(
-        `${API_URL}/google/locations/${accountId}`
+      const locationResponse = await apiFetch(
+        `/google/locations/${accountId}`
       );
 
       const locationData =
@@ -160,9 +309,7 @@ export default function Home() {
 
       if (locationData.error) {
         throw new Error(
-          locationData.error?.message ||
-          locationData.error?.error?.message ||
-          JSON.stringify(locationData.error)
+          describeApiError(locationData.error)
         );
       }
 
@@ -237,8 +384,8 @@ export default function Home() {
     resetWorkflow();
 
     try {
-      const reviewResponse = await fetch(
-        `${API_URL}/reviews/${accountId}/${locationId}`
+      const reviewResponse = await apiFetch(
+        `/reviews/${accountId}/${locationId}`
       );
 
       const reviewData =
@@ -246,9 +393,7 @@ export default function Home() {
 
       if (reviewData.error) {
         throw new Error(
-          reviewData.error?.message ||
-          reviewData.error?.error?.message ||
-          JSON.stringify(reviewData.error)
+          describeApiError(reviewData.error)
         );
       }
 
@@ -298,8 +443,8 @@ export default function Home() {
     }));
 
     try {
-      const response = await fetch(
-        `${API_URL}/generate-reply`,
+      const response = await apiFetch(
+        "/generate-reply",
         {
           method: "POST",
           headers: {
@@ -413,8 +558,8 @@ export default function Home() {
     }
 
     try {
-      const response = await fetch(
-        `${API_URL}/approve-reply`,
+      const response = await apiFetch(
+        "/approve-reply",
         {
           method: "POST",
           headers: {
@@ -533,8 +678,8 @@ export default function Home() {
 
     for (const review of approvedReviews) {
       try {
-        const response = await fetch(
-          `${API_URL}/post-reply`,
+        const response = await apiFetch(
+          "/post-reply",
           {
             method: "POST",
             headers: {
@@ -691,7 +836,7 @@ export default function Home() {
                   `${API_URL}/auth/google`;
               }}
               disabled={
-                loadingReviews
+                loadingReviews || !authChecked
               }
               className="bg-[#3552FF] px-7 py-3.5 text-sm font-semibold text-white transition hover:bg-[#2A42D6] disabled:cursor-not-allowed disabled:bg-white/20"
             >
@@ -734,6 +879,26 @@ export default function Home() {
                 </button>
               )}
           </div>
+
+          {user && (
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-white/50">
+              <span>Signed in as {user.email}</span>
+
+              <button
+                onClick={signOut}
+                className="underline-offset-2 hover:text-white hover:underline"
+              >
+                Sign out
+              </button>
+
+              <button
+                onClick={disconnectAccount}
+                className="underline-offset-2 hover:text-white hover:underline"
+              >
+                Disconnect
+              </button>
+            </div>
+          )}
 
           {googleError && (
             <div className="mt-6 max-w-xl border border-red-400/40 bg-red-500/10 p-4 text-sm text-red-200">
