@@ -109,6 +109,16 @@ SCHEMA = [
         updated_at TEXT NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS example_replies (
+        id TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        rating INTEGER NOT NULL,
+        review_text TEXT NOT NULL,
+        reply_text TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """,
 ]
 
 
@@ -318,3 +328,127 @@ def set_reply_templates(
             ),
             (account_id, five_star, middle, one_star, _now()),
         )
+
+
+MAX_EXAMPLE_REPLIES = 10
+
+
+def add_example_reply(
+    account_id: str,
+    rating: int,
+    review_text: str,
+    reply_text: str,
+) -> dict:
+    """
+    Saves one of the business's own replies as a style example for
+    future AI drafts. Keeps only the most recent MAX_EXAMPLE_REPLIES
+    per account -- older ones are dropped automatically so the
+    prompt this feeds into never grows unbounded.
+    """
+    new_id = str(uuid.uuid4())
+
+    with connection() as conn:
+        cur = conn.cursor()
+
+        cur.execute(
+            _sql(
+                """
+                INSERT INTO example_replies (
+                    id, account_id, rating, review_text,
+                    reply_text, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """
+            ),
+            (
+                new_id,
+                account_id,
+                rating,
+                review_text,
+                reply_text,
+                _now(),
+            ),
+        )
+
+        cur.execute(
+            _sql(
+                "SELECT id FROM example_replies "
+                "WHERE account_id = ? "
+                "ORDER BY created_at DESC"
+            ),
+            (account_id,),
+        )
+
+        ids = [row[0] for row in cur.fetchall()]
+
+        stale_ids = ids[MAX_EXAMPLE_REPLIES:]
+
+        for stale_id in stale_ids:
+            cur.execute(
+                _sql(
+                    "DELETE FROM example_replies WHERE id = ?"
+                ),
+                (stale_id,),
+            )
+
+    return {
+        "id": new_id,
+        "rating": rating,
+        "review_text": review_text,
+        "reply_text": reply_text,
+    }
+
+
+def list_example_replies(account_id: str) -> list:
+    with connection() as conn:
+        cur = conn.cursor()
+
+        cur.execute(
+            _sql(
+                "SELECT id, rating, review_text, reply_text "
+                "FROM example_replies WHERE account_id = ? "
+                "ORDER BY created_at DESC"
+            ),
+            (account_id,),
+        )
+
+        return _rows(cur)
+
+
+def delete_example_reply(
+    account_id: str, example_id: str
+) -> None:
+    """Scoped to account_id -- one business can never delete another's."""
+    with connection() as conn:
+        cur = conn.cursor()
+
+        cur.execute(
+            _sql(
+                "DELETE FROM example_replies "
+                "WHERE id = ? AND account_id = ?"
+            ),
+            (example_id, account_id),
+        )
+
+
+def examples_for_bucket(
+    account_id: str,
+    ratings: tuple,
+    limit: int = 2,
+) -> list:
+    """Most recent examples whose rating is in `ratings`, for the prompt."""
+    placeholders = ", ".join(["?"] * len(ratings))
+
+    with connection() as conn:
+        cur = conn.cursor()
+
+        cur.execute(
+            _sql(
+                "SELECT review_text, reply_text FROM example_replies "
+                f"WHERE account_id = ? AND rating IN ({placeholders}) "
+                "ORDER BY created_at DESC LIMIT ?"
+            ),
+            (account_id, *ratings, limit),
+        )
+
+        return _rows(cur)

@@ -202,6 +202,12 @@ class TemplatesRequest(BaseModel):
     one_star: str = ""
 
 
+class ExampleReplyRequest(BaseModel):
+    rating: int
+    review_text: str
+    reply_text: str
+
+
 class PostReplyRequest(BaseModel):
     account_id: str
     location_id: str
@@ -296,6 +302,34 @@ def generate_reply(
 
         template = template.strip()
 
+        bucket_ratings = (
+            (5,)
+            if data.rating == 5
+            else (1,)
+            if data.rating == 1
+            else (2, 3, 4)
+        )
+
+        own_examples = db.examples_for_bucket(
+            account["id"], bucket_ratings, limit=2
+        )
+
+        own_examples_block = ""
+
+        if own_examples:
+            formatted = "\n\n".join(
+                f'Review: "{ex["review_text"]}"\n'
+                f'Reply: "{ex["reply_text"]}"'
+                for ex in own_examples
+            )
+
+            own_examples_block = f"""
+EXAMPLES OF THIS BUSINESS'S OWN VOICE -- match this tone and style
+closely, it is more important than the illustrative examples below:
+
+{formatted}
+"""
+
         body_only_instruction = (
             (
                 "\nA fixed greeting and sign-off that this business "
@@ -338,7 +372,7 @@ Specific -- write like this: "So glad Dr. Ramesh took the time to explain everyt
 Review (2 stars): "Waited over an hour with no update."
 Too generic -- avoid this: "We're sorry for the inconvenience and appreciate your feedback."
 Specific -- write like this: "An hour with no update isn't the experience we want for anyone. We're sorry about that wait -- please reach out to us directly so we can look into what happened."
-
+{own_examples_block}
 Now write ONE complete reply for the review above, following that same approach.
 
 STRICT FACTUAL RULES:
@@ -351,7 +385,6 @@ STRICT FACTUAL RULES:
 - Never infer why the reviewer gave their rating.
 - If there is NO WRITTEN COMMENT, acknowledge only the rating and the fact that the reviewer took time to leave feedback.
 - Do not invent qualities such as attentive care, compassionate care, excellent service, calm environment or professionalism unless the reviewer explicitly said them.
-- As far as possible, use the reviewer's first name in the replies. This increases rapport between the business and the customer
 
 HEALTHCARE PRIVACY RULES:
 
@@ -671,6 +704,78 @@ def save_templates(
     )
 
     return db.get_reply_templates(account["id"])
+
+
+EXAMPLE_REVIEW_MAX_LENGTH = 2000
+EXAMPLE_REPLY_MAX_LENGTH = 1000
+
+
+@app.get("/examples")
+def get_examples(account: dict = Depends(current_account)):
+    return {
+        "examples": db.list_example_replies(
+            account["id"]
+        )
+    }
+
+
+@app.post("/examples")
+def save_example(
+    data: ExampleReplyRequest,
+    account: dict = Depends(current_account),
+):
+    if not (1 <= data.rating <= 5):
+        raise HTTPException(
+            status_code=400,
+            detail="Rating must be between 1 and 5.",
+        )
+
+    review_text = data.review_text.strip()
+    reply_text = data.reply_text.strip()
+
+    if not review_text or not reply_text:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Both the review and the reply are required."
+            ),
+        )
+
+    if len(review_text) > EXAMPLE_REVIEW_MAX_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail="That review is too long to save as an example.",
+        )
+
+    if len(reply_text) > EXAMPLE_REPLY_MAX_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail="That reply is too long to save as an example.",
+        )
+
+    saved = db.add_example_reply(
+        account["id"],
+        data.rating,
+        review_text,
+        reply_text,
+    )
+
+    return {
+        "status": "saved",
+        "example": saved,
+    }
+
+
+@app.delete("/examples/{example_id}")
+def delete_example(
+    example_id: str,
+    account: dict = Depends(current_account),
+):
+    db.delete_example_reply(
+        account["id"], example_id
+    )
+
+    return {"status": "deleted"}
 
 
 @app.post("/auth/logout")
