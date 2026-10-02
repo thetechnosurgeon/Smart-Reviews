@@ -351,6 +351,7 @@ STRICT FACTUAL RULES:
 - Never infer why the reviewer gave their rating.
 - If there is NO WRITTEN COMMENT, acknowledge only the rating and the fact that the reviewer took time to leave feedback.
 - Do not invent qualities such as attentive care, compassionate care, excellent service, calm environment or professionalism unless the reviewer explicitly said them.
+- As far as possible, use the reviewer's first name in the replies. This increases rapport between the business and the customer
 
 HEALTHCARE PRIVACY RULES:
 

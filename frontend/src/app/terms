@@ -124,8 +124,7 @@ export default function TermsOfService() {
               Contact
             </h2>
             <p className="mt-2">
-              Questions about these terms can be sent to [YOUR
-              CONTACT EMAIL].
+              Questions about these terms can be sent to drabhinavrao2000@gmail.com
             </p>
           </section>
         </div>

@@ -140,7 +140,7 @@ export default function PrivacyPolicy() {
             </h2>
             <p className="mt-2">
               Questions about this policy or your data can be sent
-              to [YOUR CONTACT EMAIL].
+              to drabhinavrao2000@gmail.com
             </p>
           </section>
         </div>
