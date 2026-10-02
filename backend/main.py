@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -185,6 +186,12 @@ class ApproveRequest(BaseModel):
     reply: str
 
 
+class ActiveBusinessRequest(BaseModel):
+    google_account_id: str
+    location_id: str
+    title: Optional[str] = None
+
+
 class PostReplyRequest(BaseModel):
     account_id: str
     location_id: str
@@ -265,8 +272,8 @@ def generate_reply(
 
         prompt = f"""
 You write public Google Business Profile replies for a healthcare organisation.
-
-Write ONE complete reply only.
+Write like a real person at this clinic who actually read this specific
+review -- not a template that could be pasted under any review anywhere.
 
 Reviewer name:
 {data.reviewer}
@@ -276,6 +283,24 @@ Rating:
 
 Written review:
 {review_text}
+
+FIRST, work out the single most specific, concrete thing in this review --
+a named doctor or staff member, a specific procedure, a specific complaint,
+a specific detail they mentioned. Build your reply around THAT, not around
+generic praise or generic sympathy. If there is truly nothing specific (a
+short "Good" or no comment), say so plainly rather than inventing detail.
+
+THE DIFFERENCE THIS MAKES:
+
+Review (5 stars): "Dr. Ramesh explained the surgery clearly and the staff were kind."
+Too generic -- avoid this: "Thank you for your wonderful review! We're so glad you had a great experience with us."
+Specific -- write like this: "So glad Dr. Ramesh took the time to explain everything clearly -- that kind of care from the whole team is exactly what we aim for."
+
+Review (2 stars): "Waited over an hour with no update."
+Too generic -- avoid this: "We're sorry for the inconvenience and appreciate your feedback."
+Specific -- write like this: "An hour with no update isn't the experience we want for anyone. We're sorry about that wait -- please reach out to us directly so we can look into what happened."
+
+Now write ONE complete reply for the review above, following that same approach.
 
 STRICT FACTUAL RULES:
 
@@ -299,13 +324,14 @@ HEALTHCARE PRIVACY RULES:
 STYLE:
 
 - Return only the final reply.
-- 15 to 55 words.
+- 15 to 60 words.
 - Natural, warm and professional.
 - Concise.
 - No emojis.
 - No placeholders.
 - Do not mention AI.
-- Avoid repetitive customer-service phrases.
+- Avoid repetitive customer-service phrases such as "we appreciate your feedback" or "thank you for your kind words".
+- Do not start every reply the same way -- vary your opening words between replies. Not every reply needs to open with "Thank you".
 - You may use the reviewer's first name naturally, but not every reply needs it.
 - Vary wording and sentence structure between replies.
 - Do NOT reuse the reviewer's exact words or phrases from their review. Restate their point in your own words -- echoing their own sentences back reads as robotic and insincere, even if the words are accurate.
@@ -483,13 +509,48 @@ def google_callback(
 
 @app.get("/me")
 def me(account: dict = Depends(current_account)):
+    active = db.get_active_business(account["id"])
+
     return {
         "id": account["id"],
         "email": account["email"],
         "name": account["name"],
         "picture": account["picture"],
         "connected": bool(account["refresh_token_enc"]),
+        "active_business": (
+            {
+                "google_account_id": active["google_account_id"],
+                "location_id": active["location_id"],
+                "title": active["location_title"],
+            }
+            if active
+            else None
+        ),
     }
+
+
+@app.post("/account/active-business")
+def save_active_business(
+    data: ActiveBusinessRequest,
+    account: dict = Depends(current_account),
+):
+    """Remembers which business this account is working on."""
+    if not (
+        re.fullmatch(r"\d{1,30}", data.google_account_id)
+        and re.fullmatch(r"\d{1,30}", data.location_id)
+    ):
+        raise HTTPException(
+            status_code=400, detail="Invalid business id"
+        )
+
+    db.set_active_business(
+        account["id"],
+        data.google_account_id,
+        data.location_id,
+        (data.title or "")[:200] or None,
+    )
+
+    return {"status": "saved"}
 
 
 @app.post("/auth/logout")
@@ -685,4 +746,3 @@ def get_reviews_for_dashboard(
     return {
         "reviews": formatted_reviews
     }
-
