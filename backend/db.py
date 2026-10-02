@@ -91,6 +91,24 @@ SCHEMA = [
         last_login_at TEXT
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS active_business (
+        account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+        google_account_id TEXT NOT NULL,
+        location_id TEXT NOT NULL,
+        location_title TEXT,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS reply_templates (
+        account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+        five_star TEXT,
+        middle TEXT,
+        one_star TEXT,
+        updated_at TEXT NOT NULL
+    )
+    """,
 ]
 
 
@@ -183,4 +201,120 @@ def clear_refresh_token(account_id: str) -> None:
                 "WHERE id = ?"
             ),
             (account_id,),
+        )
+
+
+def get_active_business(account_id: str) -> Optional[dict]:
+    """The business this account last chose to work on, if any."""
+    with connection() as conn:
+        cur = conn.cursor()
+
+        cur.execute(
+            _sql(
+                "SELECT google_account_id, location_id, location_title "
+                "FROM active_business WHERE account_id = ?"
+            ),
+            (account_id,),
+        )
+
+        rows = _rows(cur)
+
+        return rows[0] if rows else None
+
+
+def set_active_business(
+    account_id: str,
+    google_account_id: str,
+    location_id: str,
+    location_title: Optional[str],
+) -> None:
+    with connection() as conn:
+        cur = conn.cursor()
+
+        cur.execute(
+            _sql(
+                """
+                INSERT INTO active_business (
+                    account_id, google_account_id, location_id,
+                    location_title, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (account_id) DO UPDATE SET
+                    google_account_id = excluded.google_account_id,
+                    location_id = excluded.location_id,
+                    location_title = excluded.location_title,
+                    updated_at = excluded.updated_at
+                """
+            ),
+            (
+                account_id,
+                google_account_id,
+                location_id,
+                location_title,
+                _now(),
+            ),
+        )
+
+
+def record_consent(account_id: str, version: str) -> None:
+    with connection() as conn:
+        cur = conn.cursor()
+
+        cur.execute(
+            _sql(
+                "UPDATE accounts SET consent_accepted_at = ?, "
+                "consent_version = ? WHERE id = ?"
+            ),
+            (_now(), version, account_id),
+        )
+
+
+def get_reply_templates(account_id: str) -> dict:
+    """Always returns all three keys; unset ones are empty strings."""
+    with connection() as conn:
+        cur = conn.cursor()
+
+        cur.execute(
+            _sql(
+                "SELECT five_star, middle, one_star "
+                "FROM reply_templates WHERE account_id = ?"
+            ),
+            (account_id,),
+        )
+
+        rows = _rows(cur)
+
+    row = rows[0] if rows else {}
+
+    return {
+        "five_star": row.get("five_star") or "",
+        "middle": row.get("middle") or "",
+        "one_star": row.get("one_star") or "",
+    }
+
+
+def set_reply_templates(
+    account_id: str,
+    five_star: str,
+    middle: str,
+    one_star: str,
+) -> None:
+    with connection() as conn:
+        cur = conn.cursor()
+
+        cur.execute(
+            _sql(
+                """
+                INSERT INTO reply_templates (
+                    account_id, five_star, middle, one_star, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (account_id) DO UPDATE SET
+                    five_star = excluded.five_star,
+                    middle = excluded.middle,
+                    one_star = excluded.one_star,
+                    updated_at = excluded.updated_at
+                """
+            ),
+            (account_id, five_star, middle, one_star, _now()),
         )

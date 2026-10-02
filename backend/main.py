@@ -28,6 +28,10 @@ FRONTEND_URL = os.getenv(
 
 OLD_FRONTEND_URL = "https://smartreviews-mcjc.onrender.com"
 
+# Bump this string whenever the terms/consent wording materially changes.
+# Existing accounts then show as not-yet-consented to the new version.
+CONSENT_VERSION = "2026-10-02"
+
 # Login cookies. "lax" is right once the API lives on a subdomain of the
 # same site as the website (api.smartrepute.com). Only use "none" as a
 # temporary fallback while the API is still on onrender.com.
@@ -192,6 +196,12 @@ class ActiveBusinessRequest(BaseModel):
     title: Optional[str] = None
 
 
+class TemplatesRequest(BaseModel):
+    five_star: str = ""
+    middle: str = ""
+    one_star: str = ""
+
+
 class PostReplyRequest(BaseModel):
     account_id: str
     location_id: str
@@ -270,10 +280,39 @@ def generate_reply(
             else "NO WRITTEN COMMENT"
         )
 
+        # If this business has written their own template for this star
+        # bucket, the AI only writes the middle paragraph and we wrap it
+        # ourselves -- their exact greeting/sign-off always goes out
+        # verbatim. Businesses who haven't set one up get a complete
+        # AI-written reply, same as always.
+        templates = db.get_reply_templates(account["id"])
+
+        if data.rating == 5:
+            template = templates["five_star"]
+        elif data.rating == 1:
+            template = templates["one_star"]
+        else:
+            template = templates["middle"]
+
+        template = template.strip()
+
+        body_only_instruction = (
+            (
+                "\nA fixed greeting and sign-off that this business "
+                "wrote themselves are added around your text "
+                "separately. Write ONLY the middle paragraph -- no "
+                "\"Dear X\", no \"Thank you for...\" opener, no "
+                "sign-off or closing.\n"
+            )
+            if template
+            else ""
+        )
+
         prompt = f"""
 You write public Google Business Profile replies for a healthcare organisation.
 Write like a real person at this clinic who actually read this specific
 review -- not a template that could be pasted under any review anywhere.
+{body_only_instruction}
 
 Reviewer name:
 {data.reviewer}
@@ -323,7 +362,7 @@ HEALTHCARE PRIVACY RULES:
 
 STYLE:
 
-- Return only the final reply.
+- {"Return only the body paragraph -- no greeting, no sign-off." if template else "Return only the final reply."}
 - 15 to 60 words.
 - Natural, warm and professional.
 - Concise.
@@ -362,7 +401,7 @@ NO WRITTEN COMMENT:
 - Do not describe what they liked.
 - Do not infer anything about their experience.
 
-Write the reply now.
+{"Write the reply body now (no greeting, no sign-off)." if template else "Write the reply now."}
 """
 
         response = client.responses.create(
@@ -376,6 +415,12 @@ Write the reply now.
             return {
                 "error": "AI returned an empty reply"
             }
+
+        if template:
+            # Plain substring replace, not str.format() -- a business
+            # owner's template is free text and may contain other
+            # curly braces that were never meant to be format fields.
+            reply = template.replace("{body}", reply)
 
         return {
             "reply": reply
@@ -409,6 +454,14 @@ def post_reply(
     data: PostReplyRequest,
     account: dict = Depends(current_account),
 ):
+    if account.get("consent_version") != CONSENT_VERSION:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Please accept the terms before posting replies."
+            ),
+        )
+
     if not data.account_id or not data.location_id:
         return {
             "error": (
@@ -526,6 +579,20 @@ def me(account: dict = Depends(current_account)):
             if active
             else None
         ),
+        "consent_version": CONSENT_VERSION,
+        "consented": (
+            account.get("consent_version") == CONSENT_VERSION
+        ),
+    }
+
+
+@app.post("/consent/accept")
+def accept_consent(account: dict = Depends(current_account)):
+    db.record_consent(account["id"], CONSENT_VERSION)
+
+    return {
+        "status": "recorded",
+        "consent_version": CONSENT_VERSION,
     }
 
 
@@ -551,6 +618,58 @@ def save_active_business(
     )
 
     return {"status": "saved"}
+
+
+TEMPLATE_MAX_LENGTH = 2000
+
+
+def _validate_template(label: str, content: str) -> None:
+    content = content.strip()
+
+    if not content:
+        return
+
+    if len(content) > TEMPLATE_MAX_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"The {label} template is too long "
+                f"(max {TEMPLATE_MAX_LENGTH} characters)."
+            ),
+        )
+
+    if "{body}" not in content:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"The {label} template must contain {{body}} "
+                "exactly where the AI-written reply should go."
+            ),
+        )
+
+
+@app.get("/templates")
+def get_templates(account: dict = Depends(current_account)):
+    return db.get_reply_templates(account["id"])
+
+
+@app.post("/templates")
+def save_templates(
+    data: TemplatesRequest,
+    account: dict = Depends(current_account),
+):
+    _validate_template("five-star", data.five_star)
+    _validate_template("middle (2-4 star)", data.middle)
+    _validate_template("one-star", data.one_star)
+
+    db.set_reply_templates(
+        account["id"],
+        data.five_star.strip(),
+        data.middle.strip(),
+        data.one_star.strip(),
+    )
+
+    return db.get_reply_templates(account["id"])
 
 
 @app.post("/auth/logout")
@@ -604,7 +723,7 @@ def get_google_locations(
             f"v1/accounts/{account_id}/locations"
         ),
         params={
-            "readMask": "name,title,storefrontAddress"
+            "readMask": "name,title,storefrontAddress,metadata"
         },
     )
 

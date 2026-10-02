@@ -15,6 +15,7 @@ type Location = {
   id: string;
   title: string;
   address: string;
+  reviewLink: string;
 };
 
 type Filter =
@@ -39,6 +40,19 @@ type User = {
   name: string | null;
   picture: string | null;
   connected: boolean;
+  active_business: {
+    google_account_id: string;
+    location_id: string;
+    title: string | null;
+  } | null;
+  consent_version: string;
+  consented: boolean;
+};
+
+type Templates = {
+  five_star: string;
+  middle: string;
+  one_star: string;
 };
 
 const BATCH_SIZE = 25;
@@ -130,6 +144,31 @@ export default function Home() {
   const [ratingFilter, setRatingFilter] =
     useState<RatingFilter>("all");
 
+  const [acceptingConsent, setAcceptingConsent] =
+    useState(false);
+
+  const [showTemplatesPanel, setShowTemplatesPanel] =
+    useState(false);
+
+  const [templates, setTemplates] =
+    useState<Templates>({
+      five_star: "",
+      middle: "",
+      one_star: "",
+    });
+
+  const [templatesLoading, setTemplatesLoading] =
+    useState(false);
+
+  const [templatesSaving, setTemplatesSaving] =
+    useState(false);
+
+  const [templatesError, setTemplatesError] =
+    useState("");
+
+  const [showReviewLink, setShowReviewLink] =
+    useState(false);
+
   useEffect(() => {
     const params = new URLSearchParams(
       window.location.search
@@ -183,7 +222,10 @@ export default function Home() {
         setUser(me);
 
         if (me.connected) {
-          await loadGoogleReviews();
+          await loadGoogleReviews({
+            preferredLocationId:
+              me.active_business?.location_id,
+          });
         }
       }
     } catch (error) {
@@ -267,7 +309,119 @@ export default function Home() {
     setErrors({});
   }
 
-  async function loadGoogleReviews() {
+  async function acceptConsent() {
+    setAcceptingConsent(true);
+
+    try {
+      const response = await apiFetch(
+        "/consent/accept",
+        { method: "POST" }
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          "Could not save your acceptance. Please try again."
+        );
+      }
+
+      setUser((old) =>
+        old
+          ? { ...old, consented: true }
+          : old
+      );
+    } catch (error) {
+      setGoogleError(
+        getErrorMessage(
+          error,
+          "Could not save your acceptance. Please try again."
+        )
+      );
+    } finally {
+      setAcceptingConsent(false);
+    }
+  }
+
+  async function loadTemplates() {
+    setTemplatesLoading(true);
+    setTemplatesError("");
+
+    try {
+      const response = await apiFetch(
+        "/templates"
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          "Could not load your templates."
+        );
+      }
+
+      setTemplates(
+        await response.json()
+      );
+    } catch (error) {
+      setTemplatesError(
+        getErrorMessage(
+          error,
+          "Could not load your templates."
+        )
+      );
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }
+
+  async function openTemplatesPanel() {
+    setShowTemplatesPanel(true);
+
+    await loadTemplates();
+  }
+
+  async function saveTemplates() {
+    setTemplatesSaving(true);
+    setTemplatesError("");
+
+    try {
+      const response = await apiFetch(
+        "/templates",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify(templates),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          describeApiError(data.error)
+        );
+      }
+
+      setTemplates(data);
+      setShowTemplatesPanel(false);
+    } catch (error) {
+      setTemplatesError(
+        getErrorMessage(
+          error,
+          "Could not save your templates."
+        )
+      );
+    } finally {
+      setTemplatesSaving(false);
+    }
+  }
+
+  async function loadGoogleReviews(
+    options: {
+      preferredLocationId?: string;
+      forcePicker?: boolean;
+    } = {}
+  ) {
     setLoadingReviews(true);
     setGoogleError("");
     resetWorkflow();
@@ -328,6 +482,9 @@ export default function Home() {
               addressLines?: string[];
               locality?: string;
             };
+            metadata?: {
+              newReviewUri?: string;
+            };
           }) => ({
             id: loc.name.replace(
               "locations/",
@@ -345,15 +502,33 @@ export default function Home() {
             ]
               .filter(Boolean)
               .join(", "),
+            reviewLink:
+              loc.metadata
+                ?.newReviewUri || "",
           })
         );
 
       setLocations(parsedLocations);
 
+      const remembered =
+        !options.forcePicker &&
+        options.preferredLocationId
+          ? parsedLocations.find(
+              (loc) =>
+                loc.id ===
+                options.preferredLocationId
+            )
+          : undefined;
+
       if (parsedLocations.length === 1) {
         await loadReviewsForLocation(
           accountId,
           parsedLocations[0].id
+        );
+      } else if (remembered) {
+        await loadReviewsForLocation(
+          accountId,
+          remembered.id
         );
       } else {
         setShowLocationPicker(true);
@@ -372,6 +547,27 @@ export default function Home() {
       );
       setLoadingReviews(false);
     }
+  }
+
+  async function chooseLocation(loc: Location) {
+    // Remember the choice on the server so a refresh (or another
+    // device) opens straight into this business.
+    apiFetch("/account/active-business", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        google_account_id: googleAccountId,
+        location_id: loc.id,
+        title: loc.title,
+      }),
+    }).catch(() => {});
+
+    await loadReviewsForLocation(
+      googleAccountId,
+      loc.id
+    );
   }
 
   async function loadReviewsForLocation(
@@ -802,6 +998,184 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#FAFAF8] text-[#0B0C10]">
+      {user &&
+        user.connected &&
+        !user.consented && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6">
+            <div className="max-w-lg bg-white p-7">
+              <h2 className="text-xl font-bold">
+                Before you post replies
+              </h2>
+
+              <p className="mt-4 text-sm leading-6 text-[#63666D]">
+                Smart Repute drafts replies to
+                your Google reviews using AI.
+                Nothing is ever posted to your
+                Google Business Profile until
+                you&apos;ve reviewed and
+                approved it yourself. By
+                continuing, you authorize Smart
+                Repute to post replies to your
+                Business Profile on your behalf,
+                only for the ones you
+                approve, and you agree to our{" "}
+                <a
+                  href="/terms"
+                  target="_blank"
+                  className="underline"
+                >
+                  Terms of Service
+                </a>{" "}
+                and{" "}
+                <a
+                  href="/privacy"
+                  target="_blank"
+                  className="underline"
+                >
+                  Privacy Policy
+                </a>
+                . You can disconnect your
+                Google account at any time from
+                this page.
+              </p>
+
+              <div className="mt-6 flex flex-wrap items-center gap-4">
+                <button
+                  onClick={acceptConsent}
+                  disabled={
+                    acceptingConsent
+                  }
+                  className="bg-[#3552FF] px-6 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {acceptingConsent
+                    ? "Saving..."
+                    : "Agree and continue"}
+                </button>
+
+                <button
+                  onClick={signOut}
+                  className="text-sm text-[#63666D] underline-offset-2 hover:underline"
+                >
+                  Sign out instead
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+      {showTemplatesPanel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6">
+          <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto bg-white p-7">
+            <h2 className="text-xl font-bold">
+              Reply templates
+            </h2>
+
+            <p className="mt-3 text-sm leading-6 text-[#63666D]">
+              Optional. Write your own
+              greeting and sign-off for
+              each kind of review --
+              include{" "}
+              <code className="bg-black/5 px-1">
+                {"{body}"}
+              </code>{" "}
+              exactly where the AI-written
+              paragraph should go. Leave
+              any of these blank to let
+              the AI write the complete
+              reply, as it does now.
+            </p>
+
+            {templatesLoading ? (
+              <p className="mt-6 text-sm text-[#63666D]">
+                Loading...
+              </p>
+            ) : (
+              <div className="mt-6 flex flex-col gap-5">
+                <TemplateField
+                  label="5-star reviews"
+                  value={
+                    templates.five_star
+                  }
+                  onChange={(v) =>
+                    setTemplates(
+                      (old) => ({
+                        ...old,
+                        five_star: v,
+                      })
+                    )
+                  }
+                  placeholder={`Thank you for the wonderful review!\n\n{body}\n\nWarm regards,\nThe Team`}
+                />
+
+                <TemplateField
+                  label="2, 3 and 4-star reviews"
+                  value={
+                    templates.middle
+                  }
+                  onChange={(v) =>
+                    setTemplates(
+                      (old) => ({
+                        ...old,
+                        middle: v,
+                      })
+                    )
+                  }
+                  placeholder={`Thank you for your feedback.\n\n{body}\n\nWarm regards,\nThe Team`}
+                />
+
+                <TemplateField
+                  label="1-star reviews"
+                  value={
+                    templates.one_star
+                  }
+                  onChange={(v) =>
+                    setTemplates(
+                      (old) => ({
+                        ...old,
+                        one_star: v,
+                      })
+                    )
+                  }
+                  placeholder={`Thank you for sharing this.\n\n{body}\n\nWarm regards,\nThe Team`}
+                />
+              </div>
+            )}
+
+            {templatesError && (
+              <p className="mt-4 text-sm text-red-600">
+                {templatesError}
+              </p>
+            )}
+
+            <div className="mt-6 flex flex-wrap items-center gap-4">
+              <button
+                onClick={saveTemplates}
+                disabled={
+                  templatesSaving ||
+                  templatesLoading
+                }
+                className="bg-[#3552FF] px-6 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {templatesSaving
+                  ? "Saving..."
+                  : "Save templates"}
+              </button>
+
+              <button
+                onClick={() =>
+                  setShowTemplatesPanel(
+                    false
+                  )
+                }
+                className="text-sm text-[#63666D] underline-offset-2 hover:underline"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <section className="relative overflow-hidden bg-[#0B0C10] text-[#FAFAF8]">
         <div className="mx-auto max-w-7xl px-6 pb-20 pt-16 md:px-10 md:pb-28 md:pt-20">
           <div className="flex items-center gap-4 md:gap-6">
@@ -867,8 +1241,10 @@ export default function Home() {
             {googleConnected &&
               locations.length > 1 && (
                 <button
-                  onClick={
-                    loadGoogleReviews
+                  onClick={() =>
+                    loadGoogleReviews({
+                      forcePicker: true,
+                    })
                   }
                   disabled={
                     loadingReviews
@@ -883,6 +1259,52 @@ export default function Home() {
           {user && (
             <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-white/50">
               <span>Signed in as {user.email}</span>
+
+              {googleConnected &&
+                locations.find(
+                  (loc) =>
+                    loc.id === googleLocationId
+                ) && (
+                  <span>
+                    Business:{" "}
+                    {
+                      locations.find(
+                        (loc) =>
+                          loc.id ===
+                          googleLocationId
+                      )?.title
+                    }
+                  </span>
+                )}
+
+              {googleConnected && (
+                <button
+                  onClick={
+                    openTemplatesPanel
+                  }
+                  className="underline-offset-2 hover:text-white hover:underline"
+                >
+                  Reply templates
+                </button>
+              )}
+
+              {googleConnected &&
+                locations.find(
+                  (loc) =>
+                    loc.id ===
+                    googleLocationId
+                )?.reviewLink && (
+                  <button
+                    onClick={() =>
+                      setShowReviewLink(
+                        true
+                      )
+                    }
+                    className="underline-offset-2 hover:text-white hover:underline"
+                  >
+                    Get more reviews
+                  </button>
+                )}
 
               <button
                 onClick={signOut}
@@ -919,10 +1341,7 @@ export default function Home() {
                   <button
                     key={loc.id}
                     onClick={() =>
-                      loadReviewsForLocation(
-                        googleAccountId,
-                        loc.id
-                      )
+                      chooseLocation(loc)
                     }
                     className="border border-white/20 px-4 py-3 text-left transition hover:border-[#3552FF]"
                   >
@@ -940,6 +1359,87 @@ export default function Home() {
               </div>
             </div>
           )}
+
+          {showReviewLink &&
+            (() => {
+              const current =
+                locations.find(
+                  (loc) =>
+                    loc.id ===
+                    googleLocationId
+                );
+
+              if (
+                !current?.reviewLink
+              ) {
+                return null;
+              }
+
+              return (
+                <div className="mt-6 max-w-xl border border-white/20 bg-white/5 p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <p className="text-sm font-semibold text-white">
+                      Share this link to
+                      collect more Google
+                      reviews
+                    </p>
+
+                    <button
+                      onClick={() =>
+                        setShowReviewLink(
+                          false
+                        )
+                      }
+                      className="text-xs text-white/50 hover:text-white"
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  <p className="mt-2 text-xs leading-5 text-white/50">
+                    Send this to every
+                    patient -- texting it
+                    only to people you
+                    think will leave a
+                    good review isn&apos;t
+                    allowed under
+                    Google&apos;s policies.
+                  </p>
+
+                  <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(
+                        current.reviewLink
+                      )}`}
+                      alt="QR code to leave a Google review"
+                      width={120}
+                      height={120}
+                      className="bg-white p-2"
+                    />
+
+                    <div className="flex-1">
+                      <div className="break-all border border-white/20 bg-black/20 p-3 text-xs text-white/70">
+                        {
+                          current.reviewLink
+                        }
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(
+                            current.reviewLink
+                          );
+                        }}
+                        className="mt-3 border border-white/25 px-4 py-2 text-xs font-semibold text-white transition hover:border-white/50"
+                      >
+                        Copy link
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
         </div>
       </section>
 
@@ -1400,6 +1900,36 @@ function BrandMark({
         fill="#3552FF"
       />
     </svg>
+  );
+}
+
+function TemplateField({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <div>
+      <label className="text-sm font-semibold">
+        {label}
+      </label>
+
+      <textarea
+        value={value}
+        onChange={(e) =>
+          onChange(e.target.value)
+        }
+        placeholder={placeholder}
+        rows={4}
+        className="mt-2 w-full resize-y border border-black/15 p-3 font-mono text-sm focus:border-[#3552FF] focus:outline-none"
+      />
+    </div>
   );
 }
 
