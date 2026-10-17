@@ -448,7 +448,7 @@ export default function PrivacyPolicy() {
                   {CONTACT_EMAIL}
                 </a>
               ) : (
-                "[YOUR CONTACT EMAIL]"
+                "drabhinavrao2000@gmail.com"
               )}
               .
             </p>

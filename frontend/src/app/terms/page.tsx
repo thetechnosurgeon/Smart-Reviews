@@ -138,7 +138,7 @@ export default function TermsOfService() {
                   {CONTACT_EMAIL}
                 </a>
               ) : (
-                "[YOUR CONTACT EMAIL]"
+                "drabhinavrao2000@gmail.com"
               )}
               .
             </p>

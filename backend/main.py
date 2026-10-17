@@ -455,6 +455,7 @@ STYLE:
 - You may use the reviewer's first name naturally, but not every reply needs it.
 - Vary wording and sentence structure between replies.
 - Do NOT reuse the reviewer's exact words or phrases from their review. Restate their point in your own words -- echoing their own sentences back reads as robotic and insincere, even if the words are accurate.
+- Use Exclamation marks where possible(Example: Thank you Pooja!) to sound excited for having received a positive review.
 
 RATING GUIDANCE:
 
