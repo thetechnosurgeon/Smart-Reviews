@@ -5,6 +5,11 @@ import { useEffect, useState } from "react";
 import ArrowIcon from "./components/ArrowIcon";
 import Footer from "./components/Footer";
 import Pagination from "./components/Pagination";
+import {
+  AboutSection,
+  FaqSection,
+  GoogleDataSection,
+} from "./components/PublicInfo";
 import RatingHeader from "./components/RatingHeader";
 import ReviewCard from "./components/ReviewCard";
 import SiteNav from "./components/SiteNav";
@@ -1496,6 +1501,35 @@ export default function Home() {
       )}
 
       <SiteNav>
+        {!googleConnected && (
+          <>
+            <a
+              href="#about"
+              className="hidden rounded-lg px-3 py-2 transition hover:text-white md:inline-block"
+            >
+              Features
+            </a>
+            <a
+              href="#how-it-works"
+              className="hidden rounded-lg px-3 py-2 transition hover:text-white md:inline-block"
+            >
+              How it works
+            </a>
+            <a
+              href="#google-data"
+              className="hidden rounded-lg px-3 py-2 transition hover:text-white lg:inline-block"
+            >
+              Your Google data
+            </a>
+            <a
+              href="/privacy"
+              className="hidden rounded-lg px-3 py-2 transition hover:text-white md:inline-block"
+            >
+              Privacy
+            </a>
+          </>
+        )}
+
         {googleConnected && (
           <a
             href="#reviews"
@@ -1616,6 +1650,15 @@ export default function Home() {
                 </button>
               )}
 
+              {!googleConnected && (
+                <a
+                  href="#about"
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/25 px-6 py-3.5 text-sm font-semibold text-white transition hover:border-white/60"
+                >
+                  Learn how it works
+                </a>
+              )}
+
               {googleConnected && (
                 <button
                   onClick={() =>
@@ -1647,6 +1690,32 @@ export default function Home() {
                   </button>
                 )}
             </div>
+
+            {!googleConnected && (
+              <p className="mt-4 max-w-xl text-xs leading-5 text-white/55">
+                By connecting, you agree to our{" "}
+                <a
+                  href="/terms"
+                  className="underline hover:text-white"
+                >
+                  Terms
+                </a>{" "}
+                and{" "}
+                <a
+                  href="/privacy"
+                  className="underline hover:text-white"
+                >
+                  Privacy Policy
+                </a>
+                .{" "}
+                <a
+                  href="#google-data"
+                  className="underline hover:text-white"
+                >
+                  Why we ask for Google access
+                </a>
+              </p>
+            )}
 
             {user && (
               <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-white/55">
@@ -1733,7 +1802,12 @@ export default function Home() {
       </section>
 
       {!googleConnected && (
-        <section className="mx-auto max-w-7xl px-6 py-16 md:px-10">
+        <>
+        <AboutSection />
+        <section
+          id="how-it-works"
+          className="mx-auto max-w-7xl scroll-mt-8 px-6 py-16 md:px-10"
+        >
           <h2 className="text-center text-2xl font-bold tracking-[-0.02em] md:text-3xl">
             Three steps from review to reply
           </h2>
@@ -1786,6 +1860,9 @@ export default function Home() {
             ))}
           </div>
         </section>
+        <GoogleDataSection />
+        <FaqSection />
+        </>
       )}
 
       {googleConnected && (

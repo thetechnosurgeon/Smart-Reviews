@@ -9,8 +9,9 @@ const archivo = Archivo({
 });
 
 export const metadata: Metadata = {
-  title: "Smart Repute",
-  description: "Your AI reputation manager -- fetch, draft, and publish Google Business Profile review replies.",
+  title: "Smart Repute | AI replies for your Google reviews",
+  description:
+    "Smart Repute helps business owners read their Google Business Profile reviews, draft replies with AI, approve them, and publish them to Google. See your rating and set a goal for it.",
 };
 
 export default function RootLayout({
