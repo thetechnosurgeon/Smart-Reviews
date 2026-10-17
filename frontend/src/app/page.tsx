@@ -1227,11 +1227,6 @@ export default function Home() {
 
   function openReviewLink() {
     setShowReviewLink(true);
-
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
   }
 
   return (
@@ -1409,6 +1404,97 @@ export default function Home() {
         </div>
       )}
 
+      {showReviewLink && reviewLink && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-7 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <h2 className="text-xl font-bold">
+                Get more reviews
+              </h2>
+
+              <button
+                onClick={() =>
+                  setShowReviewLink(false)
+                }
+                className="text-sm text-[#5A6B86] hover:text-[#0B0C10]"
+              >
+                Close
+              </button>
+            </div>
+
+            <p className="mt-3 text-sm leading-6 text-[#5A6B86]">
+              Share this link with every
+              customer. Sending it only to people
+              you expect to leave a good review is
+              not allowed under Google&apos;s
+              policies.
+            </p>
+
+            {!reviewLinkAck ? (
+              <div
+                data-testid="review-link-notice"
+                className="mt-5 rounded-xl border border-[#F2A100]/40 bg-[#FFD84D]/20 p-4"
+              >
+                <p className="text-sm font-semibold text-[#7A5200]">
+                  Before you share this link
+                </p>
+
+                <p className="mt-2 text-xs leading-5 text-[#5A4500]">
+                  Google requires you to ask every
+                  customer, never choose who to ask,
+                  and never offer anything in return.
+                  If you are a doctor or hospital in
+                  India, the NMC advertising
+                  guidelines issued on 6 October 2026
+                  restrict requesting patient reviews
+                  for promotion, so check with your
+                  compliance advisor first.
+                </p>
+
+                <button
+                  onClick={() =>
+                    setReviewLinkAck(true)
+                  }
+                  className="mt-3 rounded-lg bg-[#0B0C10] px-4 py-2 text-xs font-semibold text-white transition hover:bg-black/80"
+                >
+                  I understand, show the link
+                </button>
+              </div>
+            ) : (
+              <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-start">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(
+                    reviewLink
+                  )}`}
+                  alt="QR code to leave a Google review"
+                  width={120}
+                  height={120}
+                  className="rounded-lg border border-black/10 bg-white p-2"
+                />
+
+                <div className="flex-1">
+                  <div className="break-all rounded-lg border border-black/10 bg-black/[0.03] p-3 text-xs text-[#0B0C10]/80">
+                    {reviewLink}
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(
+                        reviewLink
+                      );
+                    }}
+                    className="mt-3 rounded-lg bg-[#1957C9] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#0B3A8C]"
+                  >
+                    Copy link
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <SiteNav>
         {googleConnected && (
           <a
@@ -1461,6 +1547,17 @@ export default function Home() {
               plan={ratingPlan}
               exact={ratingStats.exact}
               onTargetChange={changeTarget}
+              action={
+                reviewLink ? (
+                  <button
+                    onClick={openReviewLink}
+                    className="inline-flex items-center gap-2 rounded-xl bg-[#FFD84D] px-6 py-3.5 text-base font-bold text-[#0B0C10] shadow-lg shadow-[#F2A100]/25 transition hover:bg-[#F2A100]"
+                  >
+                    Get more reviews
+                    <ArrowIcon />
+                  </button>
+                ) : undefined
+              }
             />
           )}
 
@@ -1574,16 +1671,6 @@ export default function Home() {
                   </button>
                 )}
 
-                {googleConnected &&
-                  reviewLink && (
-                    <button
-                      onClick={openReviewLink}
-                      className="underline-offset-2 hover:text-white hover:underline"
-                    >
-                      Get more reviews
-                    </button>
-                  )}
-
                 <button
                   onClick={disconnectAccount}
                   className="underline-offset-2 hover:text-white hover:underline"
@@ -1630,98 +1717,6 @@ export default function Home() {
                 </div>
               </div>
             )}
-
-            {showReviewLink && reviewLink && (
-              <div className="mt-6 max-w-xl rounded-2xl border border-white/20 bg-white/5 p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <p className="text-sm font-semibold text-white">
-                    Share this link to collect
-                    more Google reviews
-                  </p>
-
-                  <button
-                    onClick={() =>
-                      setShowReviewLink(false)
-                    }
-                    className="text-xs text-white/50 hover:text-white"
-                  >
-                    Close
-                  </button>
-                </div>
-
-                <p className="mt-2 text-xs leading-5 text-white/50">
-                  Send this to every patient.
-                  Texting it only to people you
-                  think will leave a good review
-                  is not allowed under
-                  Google&apos;s policies.
-                </p>
-
-                {!reviewLinkAck ? (
-                  <div
-                    data-testid="review-link-notice"
-                    className="mt-4 rounded-xl border border-[#FFD84D]/40 bg-[#FFD84D]/10 p-4"
-                  >
-                    <p className="text-sm font-semibold text-[#FFD84D]">
-                      Before you share this link
-                    </p>
-
-                    <p className="mt-2 text-xs leading-5 text-white/70">
-                      Google requires you to ask
-                      every customer, never choose
-                      who to ask, and never offer
-                      anything in return. If you are
-                      a doctor or hospital in India,
-                      the NMC advertising guidelines
-                      issued on 6 October 2026
-                      restrict requesting patient
-                      reviews for promotion, so
-                      check with your compliance
-                      advisor first.
-                    </p>
-
-                    <button
-                      onClick={() =>
-                        setReviewLinkAck(true)
-                      }
-                      className="mt-3 rounded-lg border border-white/25 px-4 py-2 text-xs font-semibold text-white transition hover:border-white/60"
-                    >
-                      I understand, show the link
-                    </button>
-                  </div>
-                ) : (
-                <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(
-                      reviewLink
-                    )}`}
-                    alt="QR code to leave a Google review"
-                    width={120}
-                    height={120}
-                    className="rounded-lg bg-white p-2"
-                  />
-
-                  <div className="flex-1">
-                    <div className="break-all rounded-lg border border-white/20 bg-black/20 p-3 text-xs text-white/70">
-                      {reviewLink}
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(
-                          reviewLink
-                        );
-                      }}
-                      className="mt-3 rounded-lg border border-white/25 px-4 py-2 text-xs font-semibold text-white transition hover:border-white/50"
-                    >
-                      Copy link
-                    </button>
-                  </div>
-                </div>
-                )}
-              </div>
-            )}
           </div>
 
           {!googleConnected && (
@@ -1730,7 +1725,7 @@ export default function Home() {
               <img
                 src="/logo-dark.png"
                 alt="Smart Repute"
-                className="w-full max-w-sm"
+                className="w-full max-w-md"
               />
             </div>
           )}
@@ -1805,12 +1800,12 @@ export default function Home() {
               <Stat
                 label="Need a reply"
                 value={pendingCount}
-                accent="#2F7DE1"
+                accent="#FFD84D"
               />
               <Stat
                 label="Replies ready"
                 value={draftedCount}
-                accent="#22C55E"
+                accent="#F97316"
               />
               <Stat
                 label="Approved"

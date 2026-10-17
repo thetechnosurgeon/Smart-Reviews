@@ -128,6 +128,9 @@ export function offsetCost(t10: number, stars: number): number {
 export type TargetPlan = {
   targetTenths: number;
   alreadyThere: boolean;
+  // Reviews needed if EVERY new review were this many stars.
+  // count === null means impossible: a review below your goal can only pull you down.
+  needed: { stars: number; count: number | null }[];
   fiveStars: number;
   mixed: number | null;
   months: number | null;
@@ -175,6 +178,10 @@ export function planFor(
   return {
     targetTenths: t10,
     alreadyThere,
+    needed: [5, 4, 3].map((stars) => ({
+      stars,
+      count: reviewsNeededAtAverage(stats.sum, stats.n, t10, stars * 10),
+    })),
     fiveStars: x,
     mixed,
     months,

@@ -56,7 +56,7 @@ export default function Footer({
             <img
               src="/logo-horizontal-dark.png"
               alt="Smart Repute"
-              className="h-10 w-auto"
+              className="h-12 w-auto md:h-16"
             />
             <p className="mt-5 max-w-xs text-sm leading-6 text-white/60">
               AI Replies &amp; Reputation Growth. Reply to every Google review

@@ -10,38 +10,46 @@ export type CardReview = {
   existing_reply?: string;
 };
 
-export type CardTone = "blue" | "green" | "white" | "muted";
+export type CardTone = "white" | "mist" | "mint" | "paper" | "muted";
 
-// Before a reply exists the card is a bright translucent blue; as soon as a
-// reply has been generated it turns bright translucent green.
+// White until a reply exists, a barely-there blue tint once a reply has been
+// drafted, and a soft green once it is approved and ready to post.
 export function cardTone(status?: string): CardTone {
-  if (status === "draft" || status === "approved") {
-    return "green";
+  if (status === "draft") {
+    return "mist";
+  }
+
+  if (status === "approved") {
+    return "mint";
   }
 
   if (status === "posted") {
-    return "white";
+    return "paper";
   }
 
   if (status === "skipped") {
     return "muted";
   }
 
-  return "blue";
+  return "white"; // no reply yet (also while generating, or after an error)
 }
 
 const TONE_STYLE: Record<CardTone, { backgroundColor: string; borderColor: string }> = {
-  blue: {
-    backgroundColor: "rgba(56, 152, 255, 0.13)",
-    borderColor: "rgba(56, 152, 255, 0.42)",
-  },
-  green: {
-    backgroundColor: "rgba(34, 230, 120, 0.17)",
-    borderColor: "rgba(18, 190, 98, 0.58)",
-  },
   white: {
     backgroundColor: "#FFFFFF",
     borderColor: "rgba(11, 12, 16, 0.10)",
+  },
+  mist: {
+    backgroundColor: "#F6F9FE",
+    borderColor: "#E1E9F6",
+  },
+  mint: {
+    backgroundColor: "#EAF7EE",
+    borderColor: "#BDE4CA",
+  },
+  paper: {
+    backgroundColor: "#F7F8FA",
+    borderColor: "rgba(11, 12, 16, 0.08)",
   },
   muted: {
     backgroundColor: "rgba(11, 12, 16, 0.035)",
@@ -49,21 +57,23 @@ const TONE_STYLE: Record<CardTone, { backgroundColor: string; borderColor: strin
   },
 };
 
+// Badge colours match the tiles at the top of the page:
+// needs reply = yellow, reply ready = orange, approved = green, replied = gold.
 function Badge({ status }: { status?: string }) {
   let label = "Needs reply";
-  let cls = "bg-[#1957C9]/15 text-[#1957C9]";
+  let cls = "bg-[#FFD84D]/40 text-[#7A5A00]";
 
   if (status === "generating") {
     label = "Generating\u2026";
-    cls = "bg-[#1957C9]/15 text-[#1957C9] animate-pulse";
+    cls = "bg-[#1957C9]/10 text-[#1957C9] animate-pulse";
   } else if (status === "draft") {
     label = "Reply ready";
-    cls = "bg-[#16A34A]/15 text-[#15803D]";
+    cls = "bg-[#F97316]/15 text-[#C2410C]";
   } else if (status === "approved") {
     label = "Approved";
     cls = "bg-[#16A34A] text-white";
   } else if (status === "posted") {
-    label = "Posted";
+    label = "Replied";
     cls = "bg-[#F2A100]/20 text-[#9A6400]";
   } else if (status === "skipped") {
     label = "Skipped";
@@ -112,7 +122,7 @@ export default function ReviewCard({
   return (
     <article
       data-tone={tone}
-      className="grid gap-6 rounded-2xl border p-6 shadow-sm backdrop-blur-sm md:grid-cols-[200px_1fr] md:p-7"
+      className="grid gap-6 rounded-2xl border p-6 shadow-sm md:grid-cols-[200px_1fr] md:p-7"
       style={TONE_STYLE[tone]}
     >
       <div>
