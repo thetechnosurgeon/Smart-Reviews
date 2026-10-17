@@ -11,8 +11,64 @@
   --font-sans: var(--font-archivo);
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-archivo), Arial, Helvetica, sans-serif;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+/*
+  Button arrow micro-interaction (see components/ArrowIcon.tsx).
+  Hover: the arrow tips up-right, like the growth arrow in the logo.
+  Press: it points straight up and squeezes, then settles.
+  Disabled buttons do not animate.
+*/
+.arrow-icon,
+.arrow-icon-left {
+  display: inline-block;
+  transform-origin: center;
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+button:not(:disabled):hover .arrow-icon,
+a:hover .arrow-icon {
+  transform: translateX(2px) rotate(-45deg);
+}
+
+button:not(:disabled):active .arrow-icon,
+a:active .arrow-icon {
+  transform: translateX(3px) rotate(-90deg) scale(0.85);
+}
+
+button:not(:disabled):hover .arrow-icon-left,
+a:hover .arrow-icon-left {
+  transform: translateX(-3px) rotate(45deg);
+}
+
+button:not(:disabled):active .arrow-icon-left,
+a:active .arrow-icon-left {
+  transform: translateX(-4px) rotate(90deg) scale(0.85);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arrow-icon,
+  .arrow-icon-left {
+    transition: none;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
 }

@@ -14,7 +14,7 @@ import os
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 logger = logging.getLogger("smartrepute.db")
@@ -107,6 +107,15 @@ SCHEMA = [
         middle TEXT,
         one_star TEXT,
         updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS usage_daily (
+        account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        day TEXT NOT NULL,
+        generated INTEGER NOT NULL DEFAULT 0,
+        posted INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (account_id, day)
     )
     """,
     """
@@ -449,6 +458,106 @@ def examples_for_bucket(
                 "ORDER BY created_at DESC LIMIT ?"
             ),
             (account_id, *ratings, limit),
+        )
+
+        return _rows(cur)
+
+
+# ---------------------------------------------------------------------------
+# Usage counters (per account, per UTC day) -- feeds the daily limit now and
+# plan limits / billing later.
+# ---------------------------------------------------------------------------
+USAGE_FIELDS = ("generated", "posted")
+
+
+def today() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def bump_usage(account_id: str, field: str, amount: int = 1) -> None:
+    if field not in USAGE_FIELDS:  # never build SQL from unchecked input
+        raise ValueError(f"unknown usage field: {field}")
+
+    generated = amount if field == "generated" else 0
+    posted = amount if field == "posted" else 0
+
+    with connection() as conn:
+        cur = conn.cursor()
+
+        cur.execute(
+            _sql(
+                """
+                INSERT INTO usage_daily (account_id, day, generated, posted)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (account_id, day) DO UPDATE SET
+                    generated = usage_daily.generated + excluded.generated,
+                    posted = usage_daily.posted + excluded.posted
+                """
+            ),
+            (account_id, today(), generated, posted),
+        )
+
+
+def get_usage_today(account_id: str) -> dict:
+    with connection() as conn:
+        cur = conn.cursor()
+
+        cur.execute(
+            _sql(
+                "SELECT generated, posted FROM usage_daily "
+                "WHERE account_id = ? AND day = ?"
+            ),
+            (account_id, today()),
+        )
+
+        rows = _rows(cur)
+
+    row = rows[0] if rows else {}
+
+    return {
+        "generated": row.get("generated", 0) or 0,
+        "posted": row.get("posted", 0) or 0,
+    }
+
+
+def admin_overview(days: int = 30) -> list:
+    """
+    One row per account with recent usage. Never returns tokens -- only
+    whether a token exists.
+    """
+    since = (
+        datetime.now(timezone.utc) - timedelta(days=days)
+    ).strftime("%Y-%m-%d")
+
+    with connection() as conn:
+        cur = conn.cursor()
+
+        cur.execute(
+            _sql(
+                """
+                SELECT
+                    a.id AS id,
+                    a.email AS email,
+                    a.name AS name,
+                    a.created_at AS created_at,
+                    a.last_login_at AS last_login_at,
+                    a.consent_version AS consent_version,
+                    CASE WHEN a.refresh_token_enc IS NULL THEN 0 ELSE 1 END AS connected,
+                    b.location_title AS business,
+                    COALESCE(SUM(u.generated), 0) AS generated,
+                    COALESCE(SUM(u.posted), 0) AS posted
+                FROM accounts a
+                LEFT JOIN usage_daily u
+                    ON u.account_id = a.id AND u.day >= ?
+                LEFT JOIN active_business b
+                    ON b.account_id = a.id
+                GROUP BY
+                    a.id, a.email, a.name, a.created_at, a.last_login_at,
+                    a.consent_version, a.refresh_token_enc, b.location_title
+                ORDER BY a.created_at DESC
+                """
+            ),
+            (since,),
         )
 
         return _rows(cur)

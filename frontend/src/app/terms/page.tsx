@@ -1,4 +1,6 @@
-import Link from "next/link";
+import Footer from "../components/Footer";
+import SiteNav from "../components/SiteNav";
+import { CONTACT_EMAIL } from "../lib/config";
 
 export const metadata = {
   title: "Terms of Service -- Smart Repute",
@@ -6,14 +8,17 @@ export const metadata = {
 
 export default function TermsOfService() {
   return (
-    <main className="min-h-screen bg-[#FAFAF8] text-[#0B0C10]">
-      <div className="mx-auto max-w-2xl px-6 py-16 md:px-10 md:py-24">
-        <Link
+    <main className="min-h-screen bg-[#F4F7FC] text-[#0B0C10]">
+      <SiteNav>
+        <a
           href="/"
-          className="text-sm text-[#3552FF] hover:underline"
+          className="rounded-lg px-3 py-2 transition hover:text-white"
         >
-          &larr; Smart Repute
-        </Link>
+          Back to app
+        </a>
+      </SiteNav>
+
+      <div className="mx-auto max-w-2xl px-6 py-16 md:px-10 md:py-20">
 
         <h1 className="mt-6 text-3xl font-bold tracking-[-0.02em] md:text-4xl">
           Terms of Service
@@ -124,11 +129,24 @@ export default function TermsOfService() {
               Contact
             </h2>
             <p className="mt-2">
-              Questions about these terms can be sent to drabhinavrao2000@gmail.com
+              Questions about these terms can be sent to{" "}
+              {CONTACT_EMAIL ? (
+                <a
+                  href={`mailto:${CONTACT_EMAIL}`}
+                  className="font-medium text-[#1957C9] underline"
+                >
+                  {CONTACT_EMAIL}
+                </a>
+              ) : (
+                "[YOUR CONTACT EMAIL]"
+              )}
+              .
             </p>
           </section>
         </div>
       </div>
+
+      <Footer />
     </main>
   );
 }

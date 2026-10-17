@@ -256,14 +256,37 @@ def get_access_token(account: dict, force_refresh: bool = False) -> str:
     return data["access_token"]
 
 
-def google_request(account: dict, method: str, url: str, **kwargs):
-    """
-    Calls a Google API as this account. Retries once with a fresh
-    token if Google says the cached one is no longer valid.
-    """
-    headers = kwargs.pop("headers", None) or {}
-    kwargs.setdefault("timeout", 30)
+# Required by Google's Business Profile API Terms of Service: use
+# exponential backoff when a request is rate-limited or Google's
+# servers have a transient problem.
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+MAX_RETRIES = 4
+BASE_DELAY_SECONDS = 1.0
 
+
+def _backoff_delay(attempt: int, response) -> float:
+    """
+    Honors Google's Retry-After header when it sends one; otherwise
+    waits BASE_DELAY_SECONDS, doubling on each subsequent attempt
+    (1s, 2s, 4s, 8s for attempts 0-3).
+    """
+    retry_after = getattr(response, "headers", {}).get(
+        "Retry-After"
+    )
+
+    if retry_after:
+        try:
+            return float(retry_after)
+        except (TypeError, ValueError):
+            pass
+
+    return BASE_DELAY_SECONDS * (2**attempt)
+
+
+def _request_with_token_refresh(
+    account: dict, method: str, url: str, headers: dict, **kwargs
+):
+    """One call, with the existing single retry-on-401 behavior."""
     token = get_access_token(account)
 
     response = requests.request(
@@ -282,6 +305,37 @@ def google_request(account: dict, method: str, url: str, **kwargs):
             headers={**headers, "Authorization": f"Bearer {token}"},
             **kwargs,
         )
+
+    return response
+
+
+def google_request(account: dict, method: str, url: str, **kwargs):
+    """
+    Calls a Google API as this account. Retries once with a fresh
+    token if Google says the cached one is no longer valid, and
+    retries with exponential backoff if Google rate-limits us or
+    has a transient server error.
+    """
+    headers = kwargs.pop("headers", None) or {}
+    kwargs.setdefault("timeout", 30)
+
+    response = _request_with_token_refresh(
+        account, method, url, headers, **kwargs
+    )
+
+    attempt = 0
+
+    while (
+        response.status_code in RETRYABLE_STATUS_CODES
+        and attempt < MAX_RETRIES
+    ):
+        time.sleep(_backoff_delay(attempt, response))
+
+        response = _request_with_token_refresh(
+            account, method, url, headers, **kwargs
+        )
+
+        attempt += 1
 
     return response
 

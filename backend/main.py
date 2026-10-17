@@ -32,6 +32,37 @@ OLD_FRONTEND_URL = "https://smartreviews-mcjc.onrender.com"
 # Existing accounts then show as not-yet-consented to the new version.
 CONSENT_VERSION = "2026-10-02"
 
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.getenv(name, "").strip() or default))
+    except ValueError:
+        return default
+
+
+# Max AI replies one business can generate per UTC day. Protects the shared
+# AI quota; later this becomes a per-plan limit.
+DAILY_GENERATION_LIMIT = _int_env("DAILY_GENERATION_LIMIT", 500)
+
+# Comma-separated Google emails allowed to open /admin/overview.
+ADMIN_EMAILS = {
+    e.strip().lower()
+    for e in os.getenv("ADMIN_EMAILS", "").split(",")
+    if e.strip()
+}
+
+
+def is_admin(account: dict) -> bool:
+    return (account.get("email") or "").lower() in ADMIN_EMAILS
+
+
+def track_usage(account_id: str, field: str) -> None:
+    """Counting must never be able to break the feature being counted."""
+    try:
+        db.bump_usage(account_id, field)
+    except Exception:
+        logger.exception("Could not record usage (%s)", field)
+
 # Login cookies. "lax" is right once the API lives on a subdomain of the
 # same site as the website (api.smartrepute.com). Only use "none" as a
 # temporary fallback while the API is still on onrender.com.
@@ -275,6 +306,22 @@ def generate_reply(
     data: ReviewRequest,
     account: dict = Depends(current_account),
 ):
+    if (
+        db.get_usage_today(account["id"])["generated"]
+        >= DAILY_GENERATION_LIMIT
+    ):
+        return JSONResponse(
+            {
+                "error": (
+                    f"You've reached today's limit of "
+                    f"{DAILY_GENERATION_LIMIT} generated replies. "
+                    "It resets at midnight UTC."
+                ),
+                "code": "daily_limit",
+            },
+            status_code=429,
+        )
+
     try:
         original_review = data.review.strip()
 
@@ -456,6 +503,8 @@ NO WRITTEN COMMENT:
             # curly braces that were never meant to be format fields.
             reply = template.replace("{body}", reply)
 
+        track_usage(account["id"], "generated")
+
         return {
             "reply": reply
         }
@@ -534,6 +583,8 @@ def post_reply(
             "error": "Google reply failed",
             "details": result,
         }
+
+    track_usage(account["id"], "posted")
 
     return {
         "status": "posted",
@@ -617,6 +668,45 @@ def me(account: dict = Depends(current_account)):
         "consented": (
             account.get("consent_version") == CONSENT_VERSION
         ),
+        "is_admin": is_admin(account),
+    }
+
+
+@app.get("/admin/overview")
+def admin_overview(account: dict = Depends(current_account)):
+    if not is_admin(account):
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    rows = db.admin_overview(30)
+
+    return {
+        "days": 30,
+        "daily_limit": DAILY_GENERATION_LIMIT,
+        "totals": {
+            "accounts": len(rows),
+            "connected": sum(1 for r in rows if r["connected"]),
+            "consented": sum(
+                1
+                for r in rows
+                if r["consent_version"] == CONSENT_VERSION
+            ),
+            "generated": sum(r["generated"] for r in rows),
+            "posted": sum(r["posted"] for r in rows),
+        },
+        "accounts": [
+            {
+                "email": r["email"],
+                "name": r["name"],
+                "business": r["business"],
+                "created_at": r["created_at"],
+                "last_login_at": r["last_login_at"],
+                "connected": bool(r["connected"]),
+                "consented": r["consent_version"] == CONSENT_VERSION,
+                "generated": r["generated"],
+                "posted": r["posted"],
+            }
+            for r in rows
+        ],
     }
 
 
@@ -849,6 +939,10 @@ def fetch_google_reviews(
     location_id: str,
 ):
     all_reviews = []
+    summary = {
+        "average_rating": None,
+        "total_reviews": None,
+    }
     page_token = None
 
     while True:
@@ -873,7 +967,16 @@ def fetch_google_reviews(
         data = _json_or_message(response)
 
         if response.status_code != 200:
-            return None, data
+            return None, None, data
+
+        if summary["average_rating"] is None:
+            # Google's own aggregate -- the number shown on the profile.
+            summary["average_rating"] = data.get(
+                "averageRating"
+            )
+            summary["total_reviews"] = data.get(
+                "totalReviewCount"
+            )
 
         all_reviews.extend(
             data.get("reviews", [])
@@ -886,7 +989,7 @@ def fetch_google_reviews(
         if not page_token:
             break
 
-    return all_reviews, None
+    return all_reviews, summary, None
 
 
 @app.get("/google/reviews/{account_id}/{location_id}")
@@ -895,7 +998,7 @@ def get_google_reviews(
     location_id: str,
     account: dict = Depends(current_account),
 ):
-    reviews, error = fetch_google_reviews(
+    reviews, summary, error = fetch_google_reviews(
         account,
         account_id,
         location_id,
@@ -907,7 +1010,8 @@ def get_google_reviews(
         }
 
     return {
-        "reviews": reviews
+        "reviews": reviews,
+        **summary,
     }
 
 
@@ -917,7 +1021,7 @@ def get_reviews_for_dashboard(
     location_id: str,
     account: dict = Depends(current_account),
 ):
-    reviews, error = fetch_google_reviews(
+    reviews, summary, error = fetch_google_reviews(
         account,
         account_id,
         location_id,
@@ -954,6 +1058,7 @@ def get_reviews_for_dashboard(
                     "comment",
                     "",
                 ),
+                "created": review.get("createTime"),
                 "has_reply": bool(
                     review.get("reviewReply")
                 ),
@@ -969,5 +1074,6 @@ def get_reviews_for_dashboard(
         )
 
     return {
-        "reviews": formatted_reviews
+        "reviews": formatted_reviews,
+        **summary,
     }
