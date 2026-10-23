@@ -5,7 +5,6 @@
 export const MIN_TARGET_TENTHS = 30;
 export const MAX_TARGET_TENTHS = 49; // 5.0 is not a sensible goal, so goals stop at 4.9
 export const DEFAULT_TARGET_TENTHS = 47;
-export const MIX_AVG_TENTHS = 48; // "realistic" new reviews average 4.8 stars
 
 export type RatingStats = {
   n: number; // number of reviews
@@ -68,129 +67,202 @@ export function starCounts(ratings: number[]): number[] {
   return counts;
 }
 
-// How far below the goal we are, in "tenth-star reviews". <= 0 means at or above.
-function shortfall(sum: number, n: number, t10: number): number {
-  return t10 * n - 10 * sum;
-}
-
-// New reviews needed if every one of them is 5 stars.
-export function fiveStarsNeeded(sum: number, n: number, t10: number): number {
-  const d = shortfall(sum, n, t10);
-
-  return d <= 0 ? 0 : Math.ceil(d / (50 - t10));
-}
-
-// New reviews needed if the new reviews average m10 tenths of a star.
-// null = impossible (new reviews can never lift you above their own average).
-export function reviewsNeededAtAverage(
-  sum: number,
-  n: number,
-  t10: number,
-  m10: number
-): number | null {
-  const d = shortfall(sum, n, t10);
-
-  if (d <= 0) {
-    return 0;
-  }
-
-  const den = m10 - t10;
-
-  return den <= 0 ? null : Math.ceil(d / den);
-}
-
-// How many reviews of `stars` stars can arrive before the average drops below
-// the goal. 0 = already below. null = unlimited (they could never pull it under).
-export function negativesAfforded(
-  sum: number,
-  n: number,
-  t10: number,
-  stars: number = 1
-): number | null {
-  const slack = 10 * sum - t10 * n;
-
-  if (slack < 0) {
-    return 0;
-  }
-
-  const den = t10 - 10 * stars;
-
-  return den <= 0 ? null : Math.floor(slack / den);
-}
-
-// Five-star reviews needed to cancel out ONE review of `stars` stars.
-export function offsetCost(t10: number, stars: number): number {
-  const num = t10 - 10 * stars;
-
-  return num <= 0 ? 0 : Math.ceil(num / (50 - t10));
-}
-
-export type TargetPlan = {
-  targetTenths: number;
-  alreadyThere: boolean;
-  // Reviews needed if EVERY new review were this many stars.
-  // count === null means impossible: a review below your goal can only pull you down.
-  needed: { stars: number; count: number | null }[];
-  fiveStars: number;
-  mixed: number | null;
-  months: number | null;
-  monthsBasis: "mixed" | "five";
-  negativesAfter: number | null; // 1-star reviews you can absorb once the goal is reached
-  offsets: { stars: number; fiveStarReviews: number }[];
-  pace: number | null;
-};
-
 export function clampTarget(t10: number): number {
   const safe = Number.isFinite(t10) ? Math.round(t10) : DEFAULT_TARGET_TENTHS;
 
   return Math.min(MAX_TARGET_TENTHS, Math.max(MIN_TARGET_TENTHS, safe));
 }
 
+// ---------------------------------------------------------------------------
+// The mix of ratings a business actually gets.
+//
+// A real business cannot receive only 5-star reviews, so the goal maths works
+// from the business's OWN recent mix: what share of new reviews are 5 stars,
+// and what the other reviews average. Everything is kept in whole numbers:
+//   share  = whole percent (0-100)
+//   others = hundredths of a star
+//   the "scaled" averages below are in stars x 10,000
+// ---------------------------------------------------------------------------
+
+export type Mix = {
+  share: number; // % of recent reviews that are 5 stars
+  othersAvg: number; // average of the recent reviews that are NOT 5 stars
+  sample: number; // how many reviews this is based on
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function round2(x: number): number {
+  return Math.round(x * 100) / 100;
+}
+
+export function recentMix(
+  items: { rating: number; created?: string | null }[],
+  nowMs: number = Date.now()
+): Mix | null {
+  const valid = items.filter((r) => r.rating >= 1 && r.rating <= 5);
+
+  if (valid.length === 0) {
+    return null;
+  }
+
+  const dated = valid.map((r) => ({
+    rating: r.rating,
+    t: r.created ? new Date(r.created).getTime() : Number.NaN,
+  }));
+
+  // Prefer the last 90 days; with too few, the latest 30; else everything.
+  let window = dated.filter(
+    (r) =>
+      !Number.isNaN(r.t) && r.t >= nowMs - 90 * DAY_MS && r.t <= nowMs + DAY_MS
+  );
+
+  if (window.length < 10) {
+    const latest = dated
+      .filter((r) => !Number.isNaN(r.t))
+      .sort((x, y) => y.t - x.t)
+      .slice(0, 30);
+
+    window = latest.length >= 10 ? latest : dated;
+  }
+
+  const fives = window.filter((r) => r.rating === 5).length;
+
+  // The "other" reviews: recent ones if there are enough, else all-time.
+  const recentOthers = window.filter((r) => r.rating < 5);
+  const pool =
+    recentOthers.length >= 3 ? recentOthers : valid.filter((r) => r.rating < 5);
+
+  const othersAvg = pool.length
+    ? round2(pool.reduce((acc, r) => acc + r.rating, 0) / pool.length)
+    : 4.0;
+
+  return {
+    share: Math.round((100 * fives) / window.length),
+    othersAvg,
+    sample: window.length,
+  };
+}
+
+// Average rating of new reviews, scaled by 10,000, when `share` percent are
+// 5 stars and the rest average `others100` hundredths of a star.
+function mixScaled(share: number, others100: number): number {
+  return 500 * share + others100 * (100 - share);
+}
+
+// New reviews needed to reach the goal at this mix. null = the mix itself
+// averages at or below the goal, so no number of reviews can get there.
+export function reviewsNeededAtMix(
+  sum: number,
+  n: number,
+  t10: number,
+  share: number,
+  othersAvg: number
+): number | null {
+  const shortfall = 1000 * t10 * n - 10000 * sum; // > 0 means below the goal
+
+  if (shortfall <= 0) {
+    return 0;
+  }
+
+  const den = mixScaled(share, Math.round(othersAvg * 100)) - 1000 * t10;
+
+  return den <= 0 ? null : Math.ceil(shortfall / den);
+}
+
+// Smallest whole-percent share of 5-star reviews at which new reviews average
+// ABOVE the goal (strict = able to reach it) or AT/ABOVE it (able to hold it).
+// null = no requirement: the other reviews alone already clear the goal.
+export function minShare(
+  t10: number,
+  othersAvg: number,
+  strict: boolean
+): number | null {
+  const others100 = Math.round(othersAvg * 100);
+  const gap = 1000 * t10 - 100 * others100; // what the 5-star share must make up
+  const per = 500 - others100; // gain per percentage point of 5-star share
+
+  if (gap < 0 || (gap === 0 && !strict)) {
+    return null;
+  }
+
+  const p = strict ? Math.floor(gap / per) + 1 : Math.ceil(gap / per);
+
+  return Math.min(100, Math.max(0, p));
+}
+
+export type GoalRow = {
+  share: number; // % of new reviews that are 5 stars in this scenario
+  isRecent: boolean; // true for the business's own recent mix
+  fiveStars: number | null; // 5-star reviews needed; null = not reachable
+  total: number | null; // all new reviews needed at this mix
+  months: number | null; // at the recent pace of reviews per month
+};
+
+export type TargetPlan = {
+  targetTenths: number;
+  alreadyThere: boolean;
+  rows: GoalRow[];
+  mix: Mix;
+  mixAverage: number; // what new reviews average at the recent mix
+  neededShare: number | null; // 5-star share needed to be able to reach the goal
+  holdShare: number | null; // 5-star share needed to hold the goal once reached
+  pace: number | null;
+};
+
+export const DEFAULT_MIX: Mix = { share: 85, othersAvg: 4.0, sample: 0 };
+
 export function planFor(
   stats: RatingStats,
   targetTenths: number,
-  pacePerMonth: number | null
+  pacePerMonth: number | null,
+  mixIn: Mix | null
 ): TargetPlan {
   const t10 = clampTarget(targetTenths);
-  const x = fiveStarsNeeded(stats.sum, stats.n, t10);
-  const alreadyThere = x === 0;
-  const mixed = alreadyThere
-    ? 0
-    : reviewsNeededAtAverage(stats.sum, stats.n, t10, MIX_AVG_TENTHS);
+  const mix = mixIn ?? DEFAULT_MIX;
+  const alreadyThere = 1000 * t10 * stats.n - 10000 * stats.sum <= 0;
+  const others100 = Math.round(mix.othersAvg * 100);
 
-  const negativesAfter = negativesAfforded(
-    stats.sum + 5 * x,
-    stats.n + x,
-    t10,
-    1
-  );
+  // The business's own mix, then the next round-number scenarios above it.
+  const shares = [mix.share, 90, 95, 100]
+    .filter((p) => p >= mix.share)
+    .filter((p, i, all) => all.indexOf(p) === i);
 
-  let months: number | null = null;
-  let monthsBasis: "mixed" | "five" = "mixed";
+  const rows: GoalRow[] = shares.map((share) => {
+    const total = alreadyThere
+      ? 0
+      : reviewsNeededAtMix(stats.sum, stats.n, t10, share, mix.othersAvg);
 
-  if (!alreadyThere && pacePerMonth !== null && pacePerMonth > 0) {
-    const basis = mixed ?? x;
+    if (total === null) {
+      return {
+        share,
+        isRecent: share === mix.share,
+        fiveStars: null,
+        total: null,
+        months: null,
+      };
+    }
 
-    monthsBasis = mixed !== null ? "mixed" : "five";
-    months = basis / pacePerMonth;
-  }
+    return {
+      share,
+      isRecent: share === mix.share,
+      fiveStars: share === 100 ? total : Math.round((total * share) / 100),
+      total,
+      months:
+        !alreadyThere && pacePerMonth !== null && pacePerMonth > 0
+          ? total / pacePerMonth
+          : null,
+    };
+  });
 
   return {
     targetTenths: t10,
     alreadyThere,
-    needed: [5, 4, 3].map((stars) => ({
-      stars,
-      count: reviewsNeededAtAverage(stats.sum, stats.n, t10, stars * 10),
-    })),
-    fiveStars: x,
-    mixed,
-    months,
-    monthsBasis,
-    negativesAfter,
-    offsets: [1, 2, 3, 4].map((stars) => ({
-      stars,
-      fiveStarReviews: offsetCost(t10, stars),
-    })),
+    rows,
+    mix,
+    mixAverage: mixScaled(mix.share, others100) / 10000,
+    neededShare: minShare(t10, mix.othersAvg, true),
+    holdShare: minShare(t10, mix.othersAvg, false),
     pace: pacePerMonth,
   };
 }

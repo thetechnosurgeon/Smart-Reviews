@@ -7,6 +7,16 @@ import {
   TargetPlan,
 } from "../lib/target";
 
+function monthsText(months: number): string {
+  if (months < 1) {
+    return "less than a month";
+  }
+
+  const rounded = Math.round(months);
+
+  return rounded === 1 ? "about 1 month" : `about ${rounded} months`;
+}
+
 export default function RatingHeader({
   businessName,
   average,
@@ -29,7 +39,7 @@ export default function RatingHeader({
   const t10 = plan.targetTenths;
   const target = (t10 / 10).toFixed(1);
   const maxCount = Math.max(1, ...distribution);
-  const someImpossible = plan.needed.some((row) => row.count === null);
+  const recent = plan.rows.find((row) => row.isRecent);
 
   return (
     <div>
@@ -125,35 +135,56 @@ export default function RatingHeader({
             </div>
 
             {plan.alreadyThere ? (
-              <p data-testid="plan-already" className="goal-done">
-                You have already reached {target}.
-              </p>
+              <div data-testid="plan-already">
+                <p className="goal-done">You have already reached {target}.</p>
+
+                {plan.holdShare !== null && (
+                  <p className="goal-foot">
+                    To hold it, at least {plan.holdShare}% of new reviews
+                    should be 5{"\u2605"}. Your other reviews average{" "}
+                    {plan.mix.othersAvg.toFixed(1)}
+                    {"\u2605"}.
+                  </p>
+                )}
+              </div>
             ) : (
               <div data-testid="plan-needed">
                 <p className="goal-ask">
-                  To reach {target}, if every new review were:
+                  To reach {target}, if this share of new reviews is 5
+                  {"\u2605"}:
                 </p>
 
                 <ul className="goal-rows">
-                  {plan.needed.map((row) => (
-                    <li key={row.stars}>
-                      <span className="st">
-                        {row.stars}
-                        {"\u2605"}
-                      </span>
+                  {plan.rows.map((row) => (
+                    <li key={row.share}>
+                      <div>
+                        <span className="st">
+                          {row.share}% of new reviews
+                        </span>
 
-                      {row.count === null ? (
-                        <span data-testid={`needed-${row.stars}`} className="no">
-                          Not possible
+                        {row.isRecent && (
+                          <small className="tag">
+                            your last {plan.mix.sample} reviews
+                          </small>
+                        )}
+                      </div>
+
+                      {row.fiveStars === null ? (
+                        <span
+                          data-testid={`needed-${row.share}`}
+                          className="no"
+                        >
+                          Not reachable
                         </span>
                       ) : (
                         <span
-                          data-testid={`needed-${row.stars}`}
-                          className={row.stars === 5 ? "yes big" : "yes"}
+                          data-testid={`needed-${row.share}`}
+                          className={row.isRecent ? "yes big" : "yes"}
                         >
-                          +{row.count.toLocaleString("en-IN")}
+                          +{row.fiveStars.toLocaleString("en-IN")}
                           <small>
-                            {row.count === 1 ? "review" : "reviews"}
+                            five-star{" "}
+                            {row.fiveStars === 1 ? "review" : "reviews"}
                           </small>
                         </span>
                       )}
@@ -161,11 +192,31 @@ export default function RatingHeader({
                   ))}
                 </ul>
 
-                {someImpossible && (
-                  <p className="goal-foot">
-                    Reviews rated below {target} pull your average down,
-                    so only higher-rated reviews can lift it.
+                {recent && recent.total !== null ? (
+                  <p className="goal-foot" data-testid="plan-summary">
+                    At your recent mix that is about{" "}
+                    {recent.total.toLocaleString("en-IN")} new reviews in all
+                    {recent.months !== null && plan.pace !== null
+                      ? `, or ${monthsText(recent.months)} at your recent pace of ${plan.pace} reviews a month`
+                      : ""}
+                    .
                   </p>
+                ) : (
+                  <>
+                    <p className="goal-warn" data-testid="plan-unreachable">
+                      At your recent mix, new reviews average{" "}
+                      {plan.mixAverage.toFixed(2)}
+                      {"\u2605"}, below your {target} goal, so more reviews
+                      alone will not get you there.
+                    </p>
+
+                    {plan.neededShare !== null && (
+                      <p className="goal-foot">
+                        You need at least {plan.neededShare}% of new reviews
+                        to be 5{"\u2605"} (you are at {plan.mix.share}%).
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             )}

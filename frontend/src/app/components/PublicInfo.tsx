@@ -17,7 +17,7 @@ const FEATURES: { title: string; text: string }[] = [
   },
   {
     title: "A rating goal you choose",
-    text: "Pick a target such as 4.7 and see how many 5-star reviews it would take to reach it, and why lower-rated reviews cannot get you there.",
+    text: "Pick a target such as 4.7 and see how many 5-star reviews it would take to reach it, based on the mix of ratings your business really gets.",
   },
   {
     title: "Pages of 25 reviews",

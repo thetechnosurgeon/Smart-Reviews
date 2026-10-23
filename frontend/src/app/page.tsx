@@ -26,6 +26,7 @@ import {
   DEFAULT_TARGET_TENTHS,
   planFor,
   readStoredTarget,
+  recentMix,
   recentPace,
   starCounts,
   storeTarget,
@@ -1183,7 +1184,13 @@ export default function Home() {
   const ratingPlan = planFor(
     ratingStats,
     targetTenths,
-    recentPace(reviews.map((review) => review.created))
+    recentPace(reviews.map((review) => review.created)),
+    recentMix(
+      reviews.map((review) => ({
+        rating: review.rating,
+        created: review.created,
+      }))
+    )
   );
 
   const currentBusiness = locations.find(
