@@ -12,14 +12,29 @@ export default function StarRating({
     <span
       role="img"
       aria-label={`${value.toFixed(1)} out of 5 stars`}
-      className="relative inline-block whitespace-nowrap leading-none"
-      style={{ fontSize: size }}
+      style={{
+        position: "relative",
+        display: "inline-block",
+        whiteSpace: "nowrap",
+        lineHeight: 1,
+        letterSpacing: 2,
+        fontSize: size,
+      }}
     >
-      <span className="text-white/20">{"\u2605\u2605\u2605\u2605\u2605"}</span>
+      <span style={{ color: "rgba(255,255,255,0.2)" }}>
+        {"\u2605\u2605\u2605\u2605\u2605"}
+      </span>
       <span
         data-fill={pct.toFixed(1)}
-        className="absolute left-0 top-0 overflow-hidden whitespace-nowrap"
-        style={{ width: `${pct}%`, color: "#FFD84D" }}
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          overflow: "hidden",
+          whiteSpace: "nowrap",
+          width: `${pct}%`,
+          color: "#d8a73a",
+        }}
       >
         {"\u2605\u2605\u2605\u2605\u2605"}
       </span>

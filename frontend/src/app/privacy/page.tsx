@@ -291,16 +291,12 @@ const SECTIONS: Section[] = [
 
 function renderBlock(block: Block, key: number): ReactNode {
   if ("p" in block) {
-    return (
-      <p key={key} className="mt-3">
-        {block.p}
-      </p>
-    );
+    return <p key={key}>{block.p}</p>;
   }
 
   if ("ul" in block) {
     return (
-      <ul key={key} className="mt-3 list-disc space-y-2 pl-6">
+      <ul key={key}>
         {block.ul.map((item) => (
           <li key={item}>{item}</li>
         ))}
@@ -310,33 +306,20 @@ function renderBlock(block: Block, key: number): ReactNode {
 
   if ("table" in block) {
     return (
-      <div
-        key={key}
-        className="mt-4 overflow-x-auto rounded-xl border border-black/10 bg-white"
-      >
-        <table className="w-full min-w-[620px] text-left text-sm">
-          <thead className="bg-[#0B0C10] text-xs text-white/85">
+      <div key={key} className="tablewrap">
+        <table>
+          <thead>
             <tr>
               {block.table.head.map((h) => (
-                <th key={h} className="px-4 py-3 font-semibold">
-                  {h}
-                </th>
+                <th key={h}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {block.table.rows.map((row) => (
-              <tr
-                key={row[0] + row[2]}
-                className="border-t border-black/5 align-top"
-              >
+              <tr key={row[0] + row[2]}>
                 {row.map((cell, i) => (
-                  <td
-                    key={i}
-                    className={`px-4 py-3 ${
-                      i === 1 ? "break-all font-mono text-xs" : ""
-                    }`}
-                  >
+                  <td key={i} className={i === 1 ? "mono" : undefined}>
                     {cell}
                   </td>
                 ))}
@@ -349,14 +332,9 @@ function renderBlock(block: Block, key: number): ReactNode {
   }
 
   return (
-    <p key={key} className="mt-3">
+    <p key={key}>
       {block.link.before}
-      <a
-        href={block.link.href}
-        target="_blank"
-        rel="noreferrer"
-        className="font-medium text-[#1957C9] underline"
-      >
+      <a href={block.link.href} target="_blank" rel="noreferrer">
         {block.link.text}
       </a>
       {block.link.after}
@@ -366,105 +344,72 @@ function renderBlock(block: Block, key: number): ReactNode {
 
 export default function PrivacyPolicy() {
   return (
-    <main className="min-h-screen bg-[#F4F7FC] text-[#0B0C10]">
-      <SiteNav>
-        <a
-          href="/"
-          className="rounded-lg px-3 py-2 transition hover:text-white"
-        >
-          Back to app
-        </a>
+    <main>
+      <SiteNav solid>
+        <a href="/">Back to app</a>
       </SiteNav>
 
-      <div className="mx-auto max-w-3xl px-6 py-14 md:px-10 md:py-20">
-        <h1 className="text-3xl font-bold tracking-[-0.02em] md:text-4xl">
-          Privacy Policy
-        </h1>
+      <div className="doc">
+        <p className="eyebrow">Legal</p>
 
-        <p className="mt-2 text-sm text-[#5A6B86]">
+        <h1>Privacy Policy</h1>
+
+        <p className="meta">
           Smart Repute &middot; Last updated: {LAST_UPDATED}
         </p>
 
-        <div className="mt-8 rounded-2xl border border-[#1957C9]/20 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold">In short</h2>
+        <div className="summary">
+          <h2>In short</h2>
 
-          <ul className="mt-3 list-disc space-y-2 pl-6 text-[15px] leading-7">
+          <ul>
             {SUMMARY.map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>
         </div>
 
-        <nav aria-label="Contents" className="mt-8 text-sm text-[#5A6B86]">
-          <p className="font-semibold text-[#0B0C10]">Contents</p>
+        <nav aria-label="Contents" className="toc">
+          <p style={{ margin: 0, fontWeight: 600 }}>Contents</p>
 
-          <ul className="mt-2 grid gap-x-8 gap-y-1 sm:grid-cols-2">
+          <ul>
             {SECTIONS.map((s) => (
               <li key={s.id}>
-                <a
-                  href={`#${s.id}`}
-                  className="hover:text-[#1957C9] hover:underline"
-                >
-                  {s.title}
-                </a>
+                <a href={`#${s.id}`}>{s.title}</a>
               </li>
             ))}
             <li>
-              <a
-                href="#contact"
-                className="hover:text-[#1957C9] hover:underline"
-              >
-                16. Contact us
-              </a>
+              <a href="#contact">16. Contact us</a>
             </li>
           </ul>
         </nav>
 
-        <div className="mt-10 flex flex-col gap-10 text-[15px] leading-7 text-[#0B0C10]/90">
-          {SECTIONS.map((section) => (
-            <section key={section.id} id={section.id} className="scroll-mt-8">
-              <h2 className="text-xl font-semibold text-[#0B0C10]">
-                {section.title}
-              </h2>
+        {SECTIONS.map((section) => (
+          <section key={section.id} id={section.id}>
+            <h2>{section.title}</h2>
 
-              {section.blocks.map((block, i) => renderBlock(block, i))}
-            </section>
-          ))}
-
-          <section id="contact" className="scroll-mt-8">
-            <h2 className="text-xl font-semibold text-[#0B0C10]">
-              16. Contact us
-            </h2>
-
-            <p className="mt-3">
-              Smart Repute is operated by {OPERATOR}, {LOCATION}. For any
-              question about this policy, to exercise your rights, or to ask
-              for your data to be deleted, contact us at{" "}
-              {CONTACT_EMAIL ? (
-                <a
-                  href={`mailto:${CONTACT_EMAIL}`}
-                  className="font-medium text-[#1957C9] underline"
-                >
-                  {CONTACT_EMAIL}
-                </a>
-              ) : (
-                "drabhinavrao2000@gmail.com"
-              )}
-              .
-            </p>
-
-            <p className="mt-3">
-              See also our{" "}
-              <a
-                href="/terms"
-                className="font-medium text-[#1957C9] underline"
-              >
-                Terms of Service
-              </a>
-              .
-            </p>
+            {section.blocks.map((block, i) => renderBlock(block, i))}
           </section>
-        </div>
+        ))}
+
+        <section id="contact">
+          <h2>16. Contact us</h2>
+
+          <p>
+            Smart Repute is operated by {OPERATOR}, {LOCATION}. For any
+            question about this policy, to exercise your rights, or to ask
+            for your data to be deleted, contact us at{" "}
+            {CONTACT_EMAIL ? (
+              <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
+            ) : (
+              "[YOUR CONTACT EMAIL]"
+            )}
+            .
+          </p>
+
+          <p>
+            See also our <a href="/terms">Terms of Service</a>.
+          </p>
+        </section>
       </div>
 
       <Footer />

@@ -9,6 +9,7 @@ import {
   AboutSection,
   FaqSection,
   GoogleDataSection,
+  StepsSection,
 } from "./components/PublicInfo";
 import RatingHeader from "./components/RatingHeader";
 import ReviewCard from "./components/ReviewCard";
@@ -1234,115 +1235,102 @@ export default function Home() {
     setShowReviewLink(true);
   }
 
+  const tabs: { key: Filter; label: string; count: number }[] = [
+    { key: "all", label: "All", count: reviews.length },
+    { key: "unanswered", label: "Unanswered", count: unansweredCount },
+    { key: "attention", label: "Needs attention", count: attentionCount },
+    { key: "draft", label: "Replies ready", count: draftedCount },
+    { key: "approved", label: "Approved", count: approvedCount },
+    { key: "posted", label: "Replied", count: postedCount },
+  ];
+
+  const ratingTabs: RatingFilter[] = ["all", 5, 4, 3, 2, 1];
+
+  const locationPicker = showLocationPicker && (
+    <div className="picker">
+      <p
+        className="hero-legal"
+        style={{ marginBottom: 14 }}
+      >
+        This account manages more than one business. Choose one:
+      </p>
+
+      {locations.map((loc) => (
+        <button key={loc.id} onClick={() => chooseLocation(loc)}>
+          <b>{loc.title}</b>
+          {loc.address && <small>{loc.address}</small>}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
-    <main className="min-h-screen bg-[#F4F7FC] text-[#0B0C10]">
-      {user &&
-        user.connected &&
-        !user.consented && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6">
-            <div className="max-w-lg rounded-2xl bg-white p-7 shadow-2xl">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/logo-mark.png"
-                alt=""
-                className="h-12 w-auto"
-              />
+    <main>
+      {user && user.connected && !user.consented && (
+        <div className="modal">
+          <div className="modal-card">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="mark" src="/logo-mark.png" alt="" />
 
-              <h2 className="mt-4 text-xl font-bold">
-                Before you post replies
-              </h2>
+            <h2>Before you post replies</h2>
 
-              <p className="mt-4 text-sm leading-6 text-[#5A6B86]">
-                Smart Repute drafts replies to
-                your Google reviews using AI.
-                Nothing is ever posted to your
-                Google Business Profile until
-                you have reviewed and approved
-                it yourself. By continuing, you
-                authorize Smart Repute to post
-                replies to your Business Profile
-                on your behalf, only for the
-                ones you approve, and you agree
-                to our{" "}
-                <a
-                  href="/terms"
-                  target="_blank"
-                  className="font-medium text-[#1957C9] underline"
-                >
-                  Terms of Service
-                </a>{" "}
-                and{" "}
-                <a
-                  href="/privacy"
-                  target="_blank"
-                  className="font-medium text-[#1957C9] underline"
-                >
-                  Privacy Policy
-                </a>
-                . You can disconnect your Google
-                account at any time from this
-                page.
-              </p>
+            <p>
+              Smart Repute drafts replies to your Google reviews using AI.
+              Nothing is ever posted to your Google Business Profile until
+              you have reviewed and approved it yourself. By continuing,
+              you authorize Smart Repute to post replies to your Business
+              Profile on your behalf, only for the ones you approve, and
+              you agree to our{" "}
+              <a href="/terms" target="_blank">
+                Terms of Service
+              </a>{" "}
+              and{" "}
+              <a href="/privacy" target="_blank">
+                Privacy Policy
+              </a>
+              . You can disconnect your Google account at any time from
+              this page.
+            </p>
 
-              <div className="mt-6 flex flex-wrap items-center gap-4">
-                <button
-                  onClick={acceptConsent}
-                  disabled={acceptingConsent}
-                  className="inline-flex items-center gap-2 rounded-xl bg-[#1957C9] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#2F7DE1] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {acceptingConsent
-                    ? "Saving\u2026"
-                    : "Agree and continue"}
-                  {!acceptingConsent && (
-                    <ArrowIcon />
-                  )}
-                </button>
+            <div className="modal-actions">
+              <button
+                className="btn btn--blue"
+                onClick={acceptConsent}
+                disabled={acceptingConsent}
+              >
+                {acceptingConsent ? "Saving\u2026" : "Agree and continue"}
+                {!acceptingConsent && <ArrowIcon />}
+              </button>
 
-                <button
-                  onClick={signOut}
-                  className="text-sm text-[#5A6B86] underline-offset-2 hover:underline"
-                >
-                  Sign out instead
-                </button>
-              </div>
+              <button className="textbtn" onClick={signOut}>
+                Sign out instead
+              </button>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
       {showTemplatesPanel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6">
-          <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-7 shadow-2xl">
-            <h2 className="text-xl font-bold">
-              Reply templates
-            </h2>
+        <div className="modal">
+          <div className="modal-card">
+            <h2>Reply templates</h2>
 
-            <p className="mt-3 text-sm leading-6 text-[#5A6B86]">
-              Optional. Write your own greeting
-              and sign-off for each kind of
-              review. Include{" "}
-              <code className="rounded bg-black/5 px-1">
-                {"{body}"}
-              </code>{" "}
-              exactly where the AI-written
-              paragraph should go. Leave any of
-              these blank to let the AI write
-              the complete reply.
+            <p>
+              Optional. Write your own greeting and sign-off for each kind
+              of review. Include <code>{"{body}"}</code> exactly where the
+              AI-written paragraph should go. Leave any of these blank to
+              let the AI write the complete reply.
             </p>
 
             {templatesLoading ? (
-              <p className="mt-6 text-sm text-[#5A6B86]">
-                Loading...
-              </p>
+              <p>Loading...</p>
             ) : (
-              <div className="mt-6 flex flex-col gap-5">
+              <>
                 <TemplateField
                   label="5-star reviews"
                   value={templates.five_star}
                   onChange={(v) =>
-                    setTemplates((old) => ({
-                      ...old,
-                      five_star: v,
-                    }))
+                    setTemplates((old) => ({ ...old, five_star: v }))
                   }
                   placeholder={`Thank you for the wonderful review!\n\n{body}\n\nWarm regards,\nThe Team`}
                 />
@@ -1351,10 +1339,7 @@ export default function Home() {
                   label="2, 3 and 4-star reviews"
                   value={templates.middle}
                   onChange={(v) =>
-                    setTemplates((old) => ({
-                      ...old,
-                      middle: v,
-                    }))
+                    setTemplates((old) => ({ ...old, middle: v }))
                   }
                   placeholder={`Thank you for your feedback.\n\n{body}\n\nWarm regards,\nThe Team`}
                 />
@@ -1363,44 +1348,30 @@ export default function Home() {
                   label="1-star reviews"
                   value={templates.one_star}
                   onChange={(v) =>
-                    setTemplates((old) => ({
-                      ...old,
-                      one_star: v,
-                    }))
+                    setTemplates((old) => ({ ...old, one_star: v }))
                   }
                   placeholder={`Thank you for sharing this.\n\n{body}\n\nWarm regards,\nThe Team`}
                 />
-              </div>
+              </>
             )}
 
             {templatesError && (
-              <p className="mt-4 text-sm text-red-600">
-                {templatesError}
-              </p>
+              <p style={{ color: "#b9473f" }}>{templatesError}</p>
             )}
 
-            <div className="mt-6 flex flex-wrap items-center gap-4">
+            <div className="modal-actions">
               <button
+                className="btn btn--green"
                 onClick={saveTemplates}
-                disabled={
-                  templatesSaving ||
-                  templatesLoading
-                }
-                className="inline-flex items-center gap-2 rounded-xl bg-[#16A34A] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#15803D] disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={templatesSaving || templatesLoading}
               >
-                {templatesSaving
-                  ? "Saving\u2026"
-                  : "Save templates"}
-                {!templatesSaving && (
-                  <ArrowIcon />
-                )}
+                {templatesSaving ? "Saving\u2026" : "Save templates"}
+                {!templatesSaving && <ArrowIcon />}
               </button>
 
               <button
-                onClick={() =>
-                  setShowTemplatesPanel(false)
-                }
-                className="text-sm text-[#5A6B86] underline-offset-2 hover:underline"
+                className="textbtn"
+                onClick={() => setShowTemplatesPanel(false)}
               >
                 Cancel
               </button>
@@ -1410,86 +1381,69 @@ export default function Home() {
       )}
 
       {showReviewLink && reviewLink && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6">
-          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-7 shadow-2xl">
-            <div className="flex items-start justify-between gap-4">
-              <h2 className="text-xl font-bold">
-                Get more reviews
-              </h2>
+        <div className="modal">
+          <div className="modal-card">
+            <div className="modal-head">
+              <h2>Get more reviews</h2>
 
               <button
-                onClick={() =>
-                  setShowReviewLink(false)
-                }
-                className="text-sm text-[#5A6B86] hover:text-[#0B0C10]"
+                className="textbtn"
+                style={{ fontSize: 14, color: "#5c5e62" }}
+                onClick={() => setShowReviewLink(false)}
               >
                 Close
               </button>
             </div>
 
-            <p className="mt-3 text-sm leading-6 text-[#5A6B86]">
-              Share this link with every
-              customer. Sending it only to people
-              you expect to leave a good review is
-              not allowed under Google&apos;s
-              policies.
+            <p>
+              Share this link with every customer. Sending it only to
+              people you expect to leave a good review is not allowed
+              under Google&apos;s policies.
             </p>
 
             {!reviewLinkAck ? (
-              <div
-                data-testid="review-link-notice"
-                className="mt-5 rounded-xl border border-[#F2A100]/40 bg-[#FFD84D]/20 p-4"
-              >
-                <p className="text-sm font-semibold text-[#7A5200]">
-                  Before you share this link
-                </p>
+              <div data-testid="review-link-notice" className="note">
+                <strong>Before you share this link</strong>
 
-                <p className="mt-2 text-xs leading-5 text-[#5A4500]">
-                  Google requires you to ask every
-                  customer, never choose who to ask,
-                  and never offer anything in return.
-                  If you are a doctor or hospital in
-                  India, the NMC advertising
-                  guidelines issued on 6 October 2026
-                  restrict requesting patient reviews
-                  for promotion, so check with your
+                <p style={{ marginTop: 8, fontSize: 13 }}>
+                  Google requires you to ask every customer, never choose
+                  who to ask, and never offer anything in return. If you
+                  are a doctor or hospital in India, the NMC advertising
+                  guidelines issued on 6 October 2026 restrict requesting
+                  patient reviews for promotion, so check with your
                   compliance advisor first.
                 </p>
 
-                <button
-                  onClick={() =>
-                    setReviewLinkAck(true)
-                  }
-                  className="mt-3 rounded-lg bg-[#0B0C10] px-4 py-2 text-xs font-semibold text-white transition hover:bg-black/80"
-                >
-                  I understand, show the link
-                </button>
+                <div className="modal-actions" style={{ marginTop: 18 }}>
+                  <button
+                    className="btn btn--ink btn--sm"
+                    onClick={() => setReviewLinkAck(true)}
+                  >
+                    I understand, show the link
+                  </button>
+                </div>
               </div>
             ) : (
-              <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-start">
+              <div className="qr">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(
                     reviewLink
                   )}`}
                   alt="QR code to leave a Google review"
-                  width={120}
-                  height={120}
-                  className="rounded-lg border border-black/10 bg-white p-2"
+                  width={132}
+                  height={132}
                 />
 
-                <div className="flex-1">
-                  <div className="break-all rounded-lg border border-black/10 bg-black/[0.03] p-3 text-xs text-[#0B0C10]/80">
-                    {reviewLink}
-                  </div>
+                <div>
+                  <div className="linkbox">{reviewLink}</div>
 
                   <button
+                    className="btn btn--blue btn--sm"
+                    style={{ marginTop: 14 }}
                     onClick={() => {
-                      navigator.clipboard.writeText(
-                        reviewLink
-                      );
+                      navigator.clipboard.writeText(reviewLink);
                     }}
-                    className="mt-3 rounded-lg bg-[#1957C9] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#0B3A8C]"
                   >
                     Copy link
                   </button>
@@ -1500,167 +1454,164 @@ export default function Home() {
         </div>
       )}
 
-      <SiteNav>
-        {!googleConnected && (
-          <>
-            <a
-              href="#about"
-              className="hidden rounded-lg px-3 py-2 transition hover:text-white md:inline-block"
-            >
+      {!googleConnected ? (
+        <>
+          <SiteNav>
+            <a href="#about" className="hide-s">
               Features
             </a>
-            <a
-              href="#how-it-works"
-              className="hidden rounded-lg px-3 py-2 transition hover:text-white md:inline-block"
-            >
+            <a href="#how-it-works" className="hide-s">
               How it works
             </a>
-            <a
-              href="#google-data"
-              className="hidden rounded-lg px-3 py-2 transition hover:text-white lg:inline-block"
-            >
+            <a href="#google-data" className="hide-m">
               Your Google data
             </a>
-            <a
-              href="/privacy"
-              className="hidden rounded-lg px-3 py-2 transition hover:text-white md:inline-block"
-            >
+            <a href="/privacy" className="hide-s">
               Privacy
             </a>
-          </>
-        )}
 
-        {googleConnected && (
-          <a
-            href="#reviews"
-            className="rounded-lg px-3 py-2 transition hover:text-white"
-          >
-            Reviews
-          </a>
-        )}
-
-        {user ? (
-          <button
-            onClick={signOut}
-            className="rounded-lg border border-white/20 px-4 py-2 font-medium text-white transition hover:border-white/50"
-          >
-            Sign out
-          </button>
-        ) : (
-          <button
-            onClick={connectGoogle}
-            disabled={!authChecked}
-            className="inline-flex items-center gap-2 rounded-lg bg-[#FFD84D] px-4 py-2 font-semibold text-[#0B0C10] transition hover:bg-[#F2A100] disabled:opacity-50"
-          >
-            Connect
-            <ArrowIcon />
-          </button>
-        )}
-      </SiteNav>
-
-      <section
-        className="relative overflow-hidden text-[#FAFAF8]"
-        style={{
-          background:
-            "radial-gradient(1100px 480px at 88% -10%, rgba(47,125,225,0.38), transparent 60%), radial-gradient(800px 420px at 0% 110%, rgba(242,161,0,0.20), transparent 55%), linear-gradient(180deg, #0B0C10 0%, #0A1A3F 100%)",
-        }}
-      >
-        <div
-          className={`mx-auto grid max-w-7xl items-center gap-10 px-6 md:px-10 ${
-            googleConnected
-              ? "py-10 md:py-12"
-              : "py-14 md:grid-cols-[1.1fr_0.9fr] md:py-24"
-          }`}
-        >
-          {googleConnected && (
-            <RatingHeader
-              businessName={currentBusiness?.title || ""}
-              average={ratingStats.average}
-              total={ratingStats.n}
-              distribution={starDistribution}
-              plan={ratingPlan}
-              exact={ratingStats.exact}
-              onTargetChange={changeTarget}
-              action={
-                reviewLink ? (
-                  <button
-                    onClick={openReviewLink}
-                    className="inline-flex items-center gap-2 rounded-xl bg-[#FFD84D] px-6 py-3.5 text-base font-bold text-[#0B0C10] shadow-lg shadow-[#F2A100]/25 transition hover:bg-[#F2A100]"
-                  >
-                    Get more reviews
-                    <ArrowIcon />
-                  </button>
-                ) : undefined
-              }
-            />
-          )}
-
-          <div>
-            {!googleConnected && (
-              <>
-                <p className="inline-block rounded-full border border-[#FFD84D]/40 bg-[#FFD84D]/10 px-3 py-1 text-xs font-semibold text-[#FFD84D]">
-                  AI Reputation Manager
-                </p>
-
-                <h1 className="mt-5 text-4xl font-extrabold leading-[1.05] tracking-[-0.03em] md:text-6xl">
-                  AI Replies &amp;
-                  <br />
-                  <span
-                    style={{
-                      background:
-                        "linear-gradient(90deg, #FFD84D, #F2A100)",
-                      WebkitBackgroundClip: "text",
-                      backgroundClip: "text",
-                      color: "transparent",
-                    }}
-                  >
-                    Reputation Growth
-                  </span>
-                </h1>
-
-                <p className="mt-6 max-w-xl text-lg leading-8 text-white/70">
-                  Connect your Google Business
-                  Profile, get a reply drafted for
-                  every review, approve what is
-                  right, and publish in one click.
-                  Nothing goes live until you say
-                  so.
-                </p>
-              </>
+            {user ? (
+              <button
+                className="btn btn--ghost-light btn--sm"
+                onClick={signOut}
+              >
+                Sign out
+              </button>
+            ) : (
+              <button
+                className="btn btn--ghost-light btn--sm"
+                onClick={connectGoogle}
+                disabled={!authChecked}
+              >
+                Connect
+              </button>
             )}
+          </SiteNav>
 
-            <div
-              className={`${
-                googleConnected ? "" : "mt-8"
-              } flex flex-wrap items-center gap-3`}
-            >
-              {!googleConnected && (
+          <section className="hero dark">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              className="hero-art"
+              src="/logo-mark-dark.png"
+              alt=""
+            />
+
+            <div className="wrap hero-body">
+              <p className="eyebrow">AI Reputation Manager</p>
+
+              <h1 className="h1">AI Replies &amp; Reputation Growth</h1>
+
+              <p className="lead">
+                Connect your Google Business Profile, get a reply drafted
+                for every review, approve what is right, and publish in
+                one click. Nothing goes live until you say so.
+              </p>
+
+              <div className="hero-cta">
                 <button
+                  className="btn btn--blue"
                   onClick={connectGoogle}
-                  disabled={
-                    loadingReviews ||
-                    !authChecked
-                  }
-                  className="inline-flex items-center gap-2 rounded-xl bg-[#1957C9] px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#1957C9]/30 transition hover:bg-[#2F7DE1] disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={loadingReviews || !authChecked}
                 >
                   {loadingReviews
                     ? "Connecting\u2026"
                     : "Connect Google Business Profile"}
                   <ArrowIcon />
                 </button>
-              )}
 
-              {!googleConnected && (
-                <a
-                  href="#about"
-                  className="inline-flex items-center gap-2 rounded-xl border border-white/25 px-6 py-3.5 text-sm font-semibold text-white transition hover:border-white/60"
-                >
+                <a className="btn btn--ghost-light" href="#about">
                   Learn how it works
                 </a>
+              </div>
+
+              <p className="hero-legal">
+                By connecting, you agree to our{" "}
+                <a href="/terms">Terms</a> and{" "}
+                <a href="/privacy">Privacy Policy</a>.{" "}
+                <a href="#google-data">Why we ask for Google access</a>
+              </p>
+
+              {user && (
+                <p className="hero-legal" style={{ marginTop: 12 }}>
+                  Signed in as {user.email}.{" "}
+                  <button className="textbtn" onClick={disconnectAccount}>
+                    Disconnect
+                  </button>
+                </p>
               )}
 
-              {googleConnected && (
+              {googleError && <p className="alert">{googleError}</p>}
+
+              {locationPicker}
+            </div>
+          </section>
+
+          <AboutSection />
+          <StepsSection />
+          <GoogleDataSection />
+          <FaqSection />
+        </>
+      ) : (
+        <>
+          <SiteNav solid>
+            <a href="#reviews" className="hide-s">
+              Reviews
+            </a>
+
+            <button
+              className="textbtn hide-s"
+              onClick={openTemplatesPanel}
+            >
+              Reply templates
+            </button>
+
+            <button
+              className="textbtn hide-s"
+              onClick={disconnectAccount}
+            >
+              Disconnect
+            </button>
+
+            <button
+              className="btn btn--ghost-light btn--sm"
+              onClick={signOut}
+            >
+              Sign out
+            </button>
+          </SiteNav>
+
+          <section className="dash-hero dark">
+            <div className="wrap">
+              <RatingHeader
+                businessName={currentBusiness?.title || ""}
+                average={ratingStats.average}
+                total={ratingStats.n}
+                distribution={starDistribution}
+                plan={ratingPlan}
+                exact={ratingStats.exact}
+                onTargetChange={changeTarget}
+                action={
+                  reviewLink ? (
+                    <button
+                      className="btn btn--gold"
+                      onClick={openReviewLink}
+                    >
+                      Get more reviews
+                      <ArrowIcon />
+                    </button>
+                  ) : undefined
+                }
+              />
+
+              {googleError && <p className="alert">{googleError}</p>}
+
+              {locationPicker}
+
+              <div className="dash-tools">
+                <span>Signed in as {user?.email}</span>
+
                 <button
+                  className="textbtn"
                   onClick={() =>
                     loadReviewsForLocation(
                       googleAccountId,
@@ -1668,244 +1619,43 @@ export default function Home() {
                     )
                   }
                   disabled={loadingReviews}
-                  className="inline-flex items-center gap-2 rounded-xl border border-white/25 px-6 py-3.5 text-sm font-semibold text-white transition hover:border-white/60 disabled:opacity-50"
                 >
                   Refresh reviews
-                  <ArrowIcon />
                 </button>
-              )}
 
-              {googleConnected &&
-                locations.length > 1 && (
+                {locations.length > 1 && (
                   <button
+                    className="textbtn"
                     onClick={() =>
-                      loadGoogleReviews({
-                        forcePicker: true,
-                      })
+                      loadGoogleReviews({ forcePicker: true })
                     }
                     disabled={loadingReviews}
-                    className="px-2 py-3.5 text-sm text-white/60 underline-offset-2 transition hover:text-white hover:underline"
                   >
                     Switch business
                   </button>
                 )}
-            </div>
-
-            {!googleConnected && (
-              <p className="mt-4 max-w-xl text-xs leading-5 text-white/55">
-                By connecting, you agree to our{" "}
-                <a
-                  href="/terms"
-                  className="underline hover:text-white"
-                >
-                  Terms
-                </a>{" "}
-                and{" "}
-                <a
-                  href="/privacy"
-                  className="underline hover:text-white"
-                >
-                  Privacy Policy
-                </a>
-                .{" "}
-                <a
-                  href="#google-data"
-                  className="underline hover:text-white"
-                >
-                  Why we ask for Google access
-                </a>
-              </p>
-            )}
-
-            {user && (
-              <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-white/55">
-                <span>
-                  Signed in as {user.email}
-                </span>
-
-                {googleConnected &&
-                  currentBusiness && (
-                    <span className="text-white/80">
-                      Business:{" "}
-                      {currentBusiness.title}
-                    </span>
-                  )}
-
-                {googleConnected && (
-                  <button
-                    onClick={openTemplatesPanel}
-                    className="underline-offset-2 hover:text-white hover:underline"
-                  >
-                    Reply templates
-                  </button>
-                )}
-
-                <button
-                  onClick={disconnectAccount}
-                  className="underline-offset-2 hover:text-white hover:underline"
-                >
-                  Disconnect
-                </button>
               </div>
-            )}
-
-            {googleError && (
-              <div className="mt-6 max-w-xl rounded-xl border border-red-400/40 bg-red-500/10 p-4 text-sm text-red-200">
-                {googleError}
-              </div>
-            )}
-
-            {showLocationPicker && (
-              <div className="mt-6 max-w-xl rounded-2xl border border-white/20 bg-white/5 p-5">
-                <p className="mb-4 text-sm font-semibold text-white">
-                  This account manages more
-                  than one business. Choose
-                  one:
-                </p>
-
-                <div className="flex flex-col gap-2">
-                  {locations.map((loc) => (
-                    <button
-                      key={loc.id}
-                      onClick={() =>
-                        chooseLocation(loc)
-                      }
-                      className="rounded-xl border border-white/20 px-4 py-3 text-left transition hover:border-[#FFD84D]"
-                    >
-                      <div className="text-sm font-medium text-white">
-                        {loc.title}
-                      </div>
-
-                      {loc.address && (
-                        <div className="mt-0.5 text-xs text-white/50">
-                          {loc.address}
-                        </div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {!googleConnected && (
-            <div className="hidden justify-center md:flex">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/logo-dark.png"
-                alt="Smart Repute"
-                className="w-full max-w-md"
-              />
-            </div>
-          )}
-        </div>
-      </section>
-
-      {!googleConnected && (
-        <>
-        <AboutSection />
-        <section
-          id="how-it-works"
-          className="mx-auto max-w-7xl scroll-mt-8 px-6 py-16 md:px-10"
-        >
-          <h2 className="text-center text-2xl font-bold tracking-[-0.02em] md:text-3xl">
-            Three steps from review to reply
-          </h2>
-
-          <div className="mt-10 grid gap-5 md:grid-cols-3">
-            {[
-              {
-                n: "1",
-                title: "Connect",
-                text: "Sign in with Google and pick your business. We never see your password.",
-                color: "#1957C9",
-              },
-              {
-                n: "2",
-                title: "Generate",
-                text: "Get a reply drafted for every review, 25 at a time, written to sound like you.",
-                color: "#F2A100",
-              },
-              {
-                n: "3",
-                title: "Approve and post",
-                text: "Edit if you like, approve each reply, then publish them all in one click.",
-                color: "#16A34A",
-              },
-            ].map((step) => (
-              <div
-                key={step.n}
-                className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm"
-                style={{
-                  borderTop: `4px solid ${step.color}`,
-                }}
-              >
-                <span
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold text-white"
-                  style={{
-                    background: step.color,
-                  }}
-                >
-                  {step.n}
-                </span>
-
-                <h3 className="mt-4 text-lg font-semibold">
-                  {step.title}
-                </h3>
-
-                <p className="mt-2 text-sm leading-6 text-[#5A6B86]">
-                  {step.text}
-                </p>
-              </div>
-            ))}
-          </div>
-        </section>
-        <GoogleDataSection />
-        <FaqSection />
-        </>
-      )}
-
-      {googleConnected && (
-        <>
-          <section className="mx-auto max-w-7xl px-6 pt-10 md:px-10">
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-              <Stat
-                label="Reviews"
-                value={reviews.length}
-                accent="#1957C9"
-              />
-              <Stat
-                label="Need a reply"
-                value={pendingCount}
-                accent="#FFD84D"
-              />
-              <Stat
-                label="Replies ready"
-                value={draftedCount}
-                accent="#F97316"
-              />
-              <Stat
-                label="Approved"
-                value={approvedCount}
-                accent="#16A34A"
-              />
-              <Stat
-                label="Replied"
-                value={postedCount}
-                accent="#F2A100"
-              />
             </div>
           </section>
 
-          <section className="mx-auto max-w-7xl px-6 pt-8 md:px-10">
-            <div className="flex flex-wrap items-center gap-3">
+          <section className="wrap">
+            <div className="stats">
+              <Stat label="Reviews" value={reviews.length} color="#2c5fb3" />
+              <Stat label="Need a reply" value={pendingCount} color="#e2bd4c" />
+              <Stat label="Replies ready" value={draftedCount} color="#d58a3c" />
+              <Stat label="Approved" value={approvedCount} color="#3a966a" />
+              <Stat label="Replied" value={postedCount} color="#d8a73a" />
+            </div>
+          </section>
+
+          <section id="reviews" className="wrap reviews">
+            <h2>Reviews</h2>
+
+            <div className="actions">
               <button
+                className="btn btn--blue"
                 onClick={generateCurrentPage}
-                disabled={
-                  generatingAll ||
-                  pendingOnPage.length === 0
-                }
-                className="inline-flex items-center gap-2 rounded-xl bg-[#1957C9] px-6 py-3 text-sm font-semibold text-white shadow-md shadow-[#1957C9]/25 transition hover:bg-[#0B3A8C] disabled:cursor-not-allowed disabled:opacity-40"
+                disabled={generatingAll || pendingOnPage.length === 0}
               >
                 {generatingAll
                   ? `Generating ${generationProgress.current}/${generationProgress.total}`
@@ -1918,124 +1668,50 @@ export default function Home() {
               </button>
 
               <button
+                className="btn btn--green"
                 onClick={postApprovedReplies}
-                disabled={
-                  posting ||
-                  approvedCount === 0 ||
-                  !googleConnected
-                }
-                className="inline-flex items-center gap-2 rounded-xl bg-[#16A34A] px-6 py-3 text-sm font-semibold text-white shadow-md shadow-[#16A34A]/25 transition hover:bg-[#15803D] disabled:cursor-not-allowed disabled:opacity-40"
+                disabled={posting || approvedCount === 0 || !googleConnected}
               >
                 {posting
                   ? "Posting\u2026"
                   : `Post approved${
-                      approvedCount
-                        ? ` (${approvedCount})`
-                        : ""
+                      approvedCount ? ` (${approvedCount})` : ""
                     }`}
                 <ArrowIcon />
               </button>
             </div>
 
-            {notice && (
-              <p className="mt-4 rounded-xl border border-[#F2A100]/50 bg-[#FFD84D]/25 px-4 py-3 text-sm font-medium text-[#7A5200]">
-                {notice}
-              </p>
-            )}
+            {notice && <p className="note">{notice}</p>}
 
-            <p className="mt-3 text-xs text-[#5A6B86]">
-              Each page holds {PAGE_SIZE}{" "}
-              reviews. Generate and approve this
-              page, then move on to the next.
-              Approved replies from every page
-              are posted together.
+            <p className="hint">
+              Each page holds {PAGE_SIZE} reviews. Generate and approve
+              this page, then move on to the next. Approved replies from
+              every page are posted together.
             </p>
-          </section>
 
-          <section
-            id="reviews"
-            className="mx-auto max-w-7xl scroll-mt-24 px-6 pb-4 pt-12 md:px-10"
-          >
-            <h2 className="mb-6 text-3xl font-bold tracking-[-0.02em]">
-              Reviews
-            </h2>
-
-            <div className="mb-4 flex flex-wrap gap-2">
-              <FilterChip
-                label={`All (${reviews.length})`}
-                active={filter === "all"}
-                onClick={() =>
-                  changeFilter("all")
-                }
-              />
-              <FilterChip
-                label={`Unanswered (${unansweredCount})`}
-                active={
-                  filter === "unanswered"
-                }
-                onClick={() =>
-                  changeFilter("unanswered")
-                }
-              />
-              <FilterChip
-                label={`Needs attention (${attentionCount})`}
-                active={
-                  filter === "attention"
-                }
-                onClick={() =>
-                  changeFilter("attention")
-                }
-              />
-              <FilterChip
-                label={`Replies ready (${draftedCount})`}
-                active={filter === "draft"}
-                onClick={() =>
-                  changeFilter("draft")
-                }
-              />
-              <FilterChip
-                label={`Approved (${approvedCount})`}
-                active={
-                  filter === "approved"
-                }
-                onClick={() =>
-                  changeFilter("approved")
-                }
-              />
-              <FilterChip
-                label={`Replied (${postedCount})`}
-                active={filter === "posted"}
-                onClick={() =>
-                  changeFilter("posted")
-                }
-              />
+            <div className="tabs" style={{ marginTop: 40 }}>
+              {tabs.map((t) => (
+                <button
+                  key={t.key}
+                  className="tab"
+                  aria-pressed={filter === t.key}
+                  onClick={() => changeFilter(t.key)}
+                >
+                  {t.label} ({t.count})
+                </button>
+              ))}
             </div>
 
-            <div className="mb-2 flex flex-wrap gap-2">
-              {(
-                [
-                  "all",
-                  5,
-                  4,
-                  3,
-                  2,
-                  1,
-                ] as RatingFilter[]
-              ).map((rating) => (
-                <FilterChip
+            <div className="tabs tabs--sub">
+              {ratingTabs.map((rating) => (
+                <button
                   key={rating}
-                  label={
-                    rating === "all"
-                      ? "All ratings"
-                      : `${rating}\u2605`
-                  }
-                  active={
-                    ratingFilter === rating
-                  }
-                  onClick={() =>
-                    changeRating(rating)
-                  }
-                />
+                  className="tab"
+                  aria-pressed={ratingFilter === rating}
+                  onClick={() => changeRating(rating)}
+                >
+                  {rating === "all" ? "All ratings" : `${rating}\u2605`}
+                </button>
               ))}
             </div>
 
@@ -2044,23 +1720,15 @@ export default function Home() {
               totalPages={totalPages}
               total={filteredReviews.length}
               pageSize={PAGE_SIZE}
-              onPrev={() =>
-                goToPage(currentPage - 1)
-              }
-              onNext={() =>
-                goToPage(currentPage + 1)
-              }
-              disabled={
-                loadingReviews || generatingAll
-              }
+              onPrev={() => goToPage(currentPage - 1)}
+              onNext={() => goToPage(currentPage + 1)}
+              disabled={loadingReviews || generatingAll}
             />
 
             {loadingReviews ? (
-              <div className="rounded-2xl border border-black/10 bg-white py-16 text-center text-sm text-[#5A6B86]">
-                Loading reviews...
-              </div>
+              <div className="empty">Loading reviews...</div>
             ) : filteredReviews.length === 0 ? (
-              <div className="rounded-2xl border border-black/10 bg-white py-16 text-center text-sm text-[#5A6B86]">
+              <div className="empty">
                 {reviews.length === 0
                   ? "No reviews found for this business yet."
                   : filter === "unanswered"
@@ -2068,7 +1736,7 @@ export default function Home() {
                   : "No reviews match this filter."}
               </div>
             ) : (
-              <div className="flex flex-col gap-4">
+              <div>
                 {pagedReviews.map((review) => (
                   <ReviewCard
                     key={review.id}
@@ -2076,40 +1744,21 @@ export default function Home() {
                     status={statuses[review.id]}
                     reply={replies[review.id]}
                     error={errors[review.id]}
-                    savedOwn={Boolean(
-                      savedExampleIds[
-                        `own-${review.id}`
-                      ]
-                    )}
+                    savedOwn={Boolean(savedExampleIds[`own-${review.id}`])}
                     savedExisting={Boolean(
-                      savedExampleIds[
-                        `existing-${review.id}`
-                      ]
+                      savedExampleIds[`existing-${review.id}`]
                     )}
-                    onGenerate={() =>
-                      generateReply(review)
-                    }
-                    onApprove={() =>
-                      approveReply(review)
-                    }
-                    onSkip={() =>
-                      skipReply(review.id)
-                    }
-                    onEdit={(value) =>
-                      editReply(
-                        review.id,
-                        value
-                      )
-                    }
+                    onGenerate={() => generateReply(review)}
+                    onApprove={() => approveReply(review)}
+                    onSkip={() => skipReply(review.id)}
+                    onEdit={(value) => editReply(review.id, value)}
                     onSaveExample={(kind) =>
                       saveAsExample(
                         review.rating,
                         review.review,
                         kind === "own"
-                          ? replies[review.id] ||
-                              ""
-                          : review.existing_reply ||
-                              "",
+                          ? replies[review.id] || ""
+                          : review.existing_reply || "",
                         `${kind}-${review.id}`
                       )
                     }
@@ -2124,16 +1773,9 @@ export default function Home() {
                 totalPages={totalPages}
                 total={filteredReviews.length}
                 pageSize={PAGE_SIZE}
-                onPrev={() =>
-                  goToPage(currentPage - 1)
-                }
-                onNext={() =>
-                  goToPage(currentPage + 1)
-                }
-                disabled={
-                  loadingReviews ||
-                  generatingAll
-                }
+                onPrev={() => goToPage(currentPage - 1)}
+                onNext={() => goToPage(currentPage + 1)}
+                disabled={loadingReviews || generatingAll}
               />
             )}
           </section>
@@ -2167,19 +1809,14 @@ function TemplateField({
   placeholder: string;
 }) {
   return (
-    <div>
-      <label className="text-sm font-semibold">
-        {label}
-      </label>
+    <div className="field">
+      <label>{label}</label>
 
       <textarea
         value={value}
-        onChange={(e) =>
-          onChange(e.target.value)
-        }
+        onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         rows={4}
-        className="mt-2 w-full resize-y rounded-xl border border-black/15 p-3 font-mono text-sm focus:border-[#1957C9] focus:outline-none"
       />
     </div>
   );
@@ -2188,49 +1825,20 @@ function TemplateField({
 function Stat({
   label,
   value,
-  accent,
+  color,
 }: {
   label: string;
   value: number;
-  accent: string;
+  color: string;
 }) {
   return (
-    <div
-      className="rounded-xl border border-black/10 bg-white px-5 py-4 shadow-sm"
-      style={{
-        borderTop: `3px solid ${accent}`,
-      }}
-    >
-      <div className="text-3xl font-bold">
-        {value}
-      </div>
+    <div className="stat">
+      <b>{value}</b>
 
-      <div className="mt-1 text-sm text-[#5A6B86]">
+      <span>
+        <i className="dot" style={{ background: color }} />
         {label}
-      </div>
+      </span>
     </div>
-  );
-}
-
-function FilterChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={
-        active
-          ? "rounded-full bg-[#0B0C10] px-4 py-2 text-sm font-medium text-white"
-          : "rounded-full border border-black/15 bg-white px-4 py-2 text-sm text-[#5A6B86] transition hover:border-[#1957C9]/50 hover:text-[#1957C9]"
-      }
-    >
-      {label}
-    </button>
   );
 }

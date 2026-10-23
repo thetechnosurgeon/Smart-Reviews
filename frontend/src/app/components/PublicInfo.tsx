@@ -73,133 +73,167 @@ const FAQ: { q: string; a: string }[] = [
   },
 ];
 
+const STEPS: { n: string; title: string; text: string }[] = [
+  {
+    n: "01",
+    title: "Connect",
+    text: "Sign in with Google and pick your business. We never see your password.",
+  },
+  {
+    n: "02",
+    title: "Generate",
+    text: "Get a reply drafted for every review, 25 at a time, written to sound like you.",
+  },
+  {
+    n: "03",
+    title: "Approve and post",
+    text: "Edit if you like, approve each reply, then publish them all in one click.",
+  },
+];
+
 export function AboutSection() {
   return (
-      <section
-        id="about"
-        className="mx-auto max-w-7xl scroll-mt-8 px-6 pb-4 md:px-10"
-      >
-        <h2 className="text-center text-2xl font-bold tracking-[-0.02em] md:text-3xl">
-          Reply to every Google review, faster and in your own voice
-        </h2>
+    <section id="about" className="sec">
+      <div className="wrap">
+        <div className="sec-head">
+          <p className="eyebrow">What it does</p>
 
-        <p className="mx-auto mt-4 max-w-3xl text-center text-base leading-7 text-[#5A6B86]">
-          Smart Repute is a web application for business owners who manage a
-          Google Business Profile. It reads the reviews on your profile,
-          drafts a reply to each one with AI, lets you edit and approve it,
-          and then publishes your approved replies to Google for you.
-        </p>
+          <h2 className="h2">
+            Reply to every Google review, faster and in your own voice
+          </h2>
 
-        <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-          {FEATURES.map((f) => (
-            <div
-              key={f.title}
-              className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm"
-            >
-              <h3 className="text-lg font-semibold">{f.title}</h3>
-              <p className="mt-2 text-sm leading-6 text-[#5A6B86]">
-                {f.text}
-              </p>
+          <p className="lead">
+            Smart Repute is a web application for business owners who
+            manage a Google Business Profile. It reads the reviews on your
+            profile, drafts a reply to each one with AI, lets you edit and
+            approve it, and then publishes your approved replies to Google
+            for you.
+          </p>
+        </div>
+
+        <div className="spec">
+          {FEATURES.map((f, i) => (
+            <div key={f.title} className="spec-row">
+              <span className="n">{String(i + 1).padStart(2, "0")}</span>
+              <h3>{f.title}</h3>
+              <p>{f.text}</p>
             </div>
           ))}
         </div>
-      </section>
+      </div>
+    </section>
+  );
+}
+
+export function StepsSection() {
+  return (
+    <section id="how-it-works" className="sec sec--mist">
+      <div className="wrap">
+        <div className="sec-head">
+          <p className="eyebrow">How it works</p>
+          <h2 className="h2">Three steps from review to reply</h2>
+        </div>
+
+        <div className="steps">
+          {STEPS.map((step) => (
+            <div key={step.n} className="step">
+              <div className="num">{step.n}</div>
+              <h3>{step.title}</h3>
+              <p>{step.text}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 
 export function GoogleDataSection() {
   return (
-      <section
-        id="google-data"
-        className="mx-auto max-w-7xl scroll-mt-8 px-6 py-16 md:px-10"
-      >
-        <div className="rounded-3xl border border-[#1957C9]/15 bg-white p-6 shadow-sm md:p-10">
-          <h2 className="text-2xl font-bold tracking-[-0.02em] md:text-3xl">
-            Why Smart Repute asks for access to your Google account
-          </h2>
+    <section id="google-data" className="sec dark">
+      <div className="wrap">
+        <div className="data-grid">
+          <div>
+            <p className="eyebrow">Your Google data</p>
 
-          <p className="mt-3 max-w-3xl text-base leading-7 text-[#5A6B86]">
-            When you click Connect, Google asks you to approve the
-            permissions below. We request only what the features above need,
-            and we use your Google data only to provide them.
-          </p>
+            <h2 className="h2">
+              Why Smart Repute asks for access to your Google account
+            </h2>
 
-          <div className="mt-8 grid gap-5 md:grid-cols-2">
-            {PERMISSIONS.map((p) => (
-              <div
-                key={p.title}
-                className="rounded-2xl border border-black/10 p-6"
-                style={{ borderTop: "4px solid #1957C9" }}
+            <p className="lead">
+              When you click Connect, Google asks you to approve the
+              permissions on this page. We request only what the features
+              above need, and we use your Google data only to provide them.
+            </p>
+
+            <p className="fine">
+              Smart Repute&apos;s use and transfer to any other app of
+              information received from Google APIs adheres to the{" "}
+              <a
+                href="https://developers.google.com/terms/api-services-user-data-policy"
+                target="_blank"
+                rel="noreferrer"
               >
-                <h3 className="text-lg font-semibold">{p.title}</h3>
-                <p className="mt-1 font-mono text-xs text-[#5A6B86]">
-                  {p.scope}
-                </p>
-                <p className="mt-3 text-sm leading-6">{p.text}</p>
-              </div>
-            ))}
+                Google API Services User Data Policy
+              </a>
+              , including the Limited Use requirements. Read the full{" "}
+              <a href="/privacy">Privacy Policy</a> and{" "}
+              <a href="/terms">Terms of Service</a>.
+            </p>
           </div>
 
-          <h3 className="mt-10 text-lg font-semibold">Our commitments</h3>
-
-          <ul className="mt-3 list-disc space-y-2 pl-6 text-sm leading-6">
-            {COMMITMENTS.map((c) => (
-              <li key={c}>{c}</li>
+          <div>
+            {PERMISSIONS.map((p) => (
+              <div key={p.title} className="perm">
+                <h3>{p.title}</h3>
+                <code>{p.scope}</code>
+                <p>{p.text}</p>
+              </div>
             ))}
-          </ul>
 
-          <p className="mt-8 text-sm leading-6 text-[#5A6B86]">
-            Smart Repute&apos;s use and transfer to any other app of
-            information received from Google APIs adheres to the{" "}
-            <a
-              href="https://developers.google.com/terms/api-services-user-data-policy"
-              target="_blank"
-              rel="noreferrer"
-              className="font-medium text-[#1957C9] underline"
+            <h3
+              style={{
+                margin: "48px 0 20px",
+                fontSize: 12,
+                fontWeight: 500,
+                letterSpacing: "0.18em",
+                textTransform: "uppercase",
+                color: "rgba(255,255,255,0.55)",
+              }}
             >
-              Google API Services User Data Policy
-            </a>
-            , including the Limited Use requirements. Read the full{" "}
-            <a
-              href="/privacy"
-              className="font-medium text-[#1957C9] underline"
-            >
-              Privacy Policy
-            </a>{" "}
-            and{" "}
-            <a href="/terms" className="font-medium text-[#1957C9] underline">
-              Terms of Service
-            </a>
-            .
-          </p>
+              Our commitments
+            </h3>
+
+            <ul className="pledges">
+              {COMMITMENTS.map((c) => (
+                <li key={c}>{c}</li>
+              ))}
+            </ul>
+          </div>
         </div>
-      </section>
+      </div>
+    </section>
   );
 }
 
 export function FaqSection() {
   return (
-      <section
-        id="faq"
-        className="mx-auto max-w-4xl scroll-mt-8 px-6 pb-8 md:px-10"
-      >
-        <h2 className="text-center text-2xl font-bold tracking-[-0.02em] md:text-3xl">
-          Frequently asked questions
-        </h2>
+    <section id="faq" className="sec">
+      <div className="wrap">
+        <div className="sec-head">
+          <p className="eyebrow">Questions</p>
+          <h2 className="h2">Frequently asked questions</h2>
+        </div>
 
-        <div className="mt-8 flex flex-col gap-4">
+        <div className="faq">
           {FAQ.map((item) => (
-            <div
-              key={item.q}
-              className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm"
-            >
-              <h3 className="text-base font-semibold">{item.q}</h3>
-              <p className="mt-2 text-sm leading-6 text-[#5A6B86]">
-                {item.a}
-              </p>
+            <div key={item.q} className="faq-item">
+              <h3>{item.q}</h3>
+              <p>{item.a}</p>
             </div>
           ))}
         </div>
-      </section>
+      </div>
+    </section>
   );
 }

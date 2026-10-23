@@ -14,26 +14,6 @@ type FooterProps = {
   onOpenReviewLink?: () => void;
 };
 
-const linkCls =
-  "text-left text-sm text-white/60 transition hover:text-white";
-
-function Column({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <p className="text-xs font-semibold uppercase tracking-wider text-[#FFD84D]">
-        {title}
-      </p>
-      <ul className="mt-4 flex flex-col gap-2.5">{children}</ul>
-    </div>
-  );
-}
-
 export default function Footer({
   signedIn = false,
   connected = false,
@@ -46,119 +26,102 @@ export default function Footer({
   onOpenReviewLink,
 }: FooterProps) {
   return (
-    <footer className="mt-20 bg-[#0B0C10] text-white">
-      <div className="h-1 w-full bg-[linear-gradient(90deg,#1957C9,#FFD84D,#16A34A)]" />
+    <footer className="foot">
+      <div className="wrap">
+        <div className="foot-top">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-horizontal-dark.png" alt="Smart Repute" />
 
-      <div className="mx-auto max-w-7xl px-6 py-14 md:px-10">
-        <div className="grid gap-10 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
-          <div>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/logo-horizontal-dark.png"
-              alt="Smart Repute"
-              className="h-12 w-auto md:h-16"
-            />
-            <p className="mt-5 max-w-xs text-sm leading-6 text-white/60">
-              AI Replies &amp; Reputation Growth. Reply to every Google review
-              in your own voice, and approve each reply before it goes live.
-            </p>
-          </div>
-
-          <Column title="Quick links">
+          <ul className="foot-links">
             <li>
-              <a href="/#reviews" className={linkCls}>
-                Reviews
-              </a>
+              <a href="/#reviews">Reviews</a>
             </li>
+
             {connected && onOpenTemplates && (
               <li>
-                <button onClick={onOpenTemplates} className={linkCls}>
+                <button className="textbtn" onClick={onOpenTemplates}>
                   Reply templates
                 </button>
               </li>
             )}
+
             {connected && canOpenReviewLink && onOpenReviewLink && (
               <li>
-                <button onClick={onOpenReviewLink} className={linkCls}>
+                <button className="textbtn" onClick={onOpenReviewLink}>
                   Get more reviews
                 </button>
               </li>
             )}
+
+            <li>
+              <a href="/privacy">Privacy Policy</a>
+            </li>
+
+            <li>
+              <a href="/terms">Terms of Service</a>
+            </li>
+
             {CONTACT_EMAIL && (
               <li>
-                <a href={`mailto:${CONTACT_EMAIL}`} className={linkCls}>
-                  Contact us
-                </a>
+                <a href={`mailto:${CONTACT_EMAIL}`}>Contact</a>
               </li>
             )}
+
             <li>
               <a
                 href="https://business.google.com"
                 target="_blank"
                 rel="noreferrer"
-                className={linkCls}
               >
                 Google Business Profile
               </a>
             </li>
-          </Column>
 
-          <Column title="Legal">
-            <li>
-              <a href="/privacy" className={linkCls}>
-                Privacy Policy
-              </a>
-            </li>
-            <li>
-              <a href="/terms" className={linkCls}>
-                Terms of Service
-              </a>
-            </li>
-          </Column>
-
-          <Column title="Account">
             {!signedIn && (
               <li>
                 {onConnect ? (
-                  <button onClick={onConnect} className={linkCls}>
+                  <button className="textbtn" onClick={onConnect}>
                     Connect Google Business Profile
                   </button>
                 ) : (
-                  <a href="/" className={linkCls}>
-                    Open the app
-                  </a>
+                  <a href="/">Open the app</a>
                 )}
               </li>
             )}
+
             {signedIn && onSignOut && (
               <li>
-                <button onClick={onSignOut} className={linkCls}>
+                <button className="textbtn" onClick={onSignOut}>
                   Sign out
                 </button>
               </li>
             )}
+
             {signedIn && onDisconnect && (
               <li>
-                <button onClick={onDisconnect} className={linkCls}>
+                <button className="textbtn" onClick={onDisconnect}>
                   Disconnect Google account
                 </button>
               </li>
             )}
+
             {isAdmin && (
               <li>
-                <a href="/admin" className={linkCls}>
-                  Admin overview
-                </a>
+                <a href="/admin">Admin overview</a>
               </li>
             )}
-          </Column>
+          </ul>
         </div>
 
-        <div className="mt-12 flex flex-col gap-2 border-t border-white/10 pt-6 text-xs text-white/40 md:flex-row md:items-center md:justify-between">
-          <p>&copy; {new Date().getFullYear()} Smart Repute. All rights reserved.</p>
+        <div className="foot-bottom">
           <p>
-            Google and Google Business Profile are trademarks of Google LLC.
-            Smart Repute is not affiliated with or endorsed by Google.
+            &copy; {new Date().getFullYear()} Smart Repute. AI Replies
+            &amp; Reputation Growth.
+          </p>
+          <p>
+            Google and Google Business Profile are trademarks of Google
+            LLC. Smart Repute is not affiliated with or endorsed by
+            Google.
           </p>
         </div>
       </div>

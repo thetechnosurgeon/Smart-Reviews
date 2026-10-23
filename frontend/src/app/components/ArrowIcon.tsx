@@ -13,15 +13,15 @@ export default function ArrowIcon({
   return (
     <svg
       viewBox="0 0 24 24"
-      width="18"
-      height="18"
+      width="17"
+      height="17"
       fill="none"
       stroke="currentColor"
-      strokeWidth={2.4}
+      strokeWidth={1.8}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
-      className={`${left ? "arrow-icon-left" : "arrow-icon"} shrink-0 ${className}`}
+      className={`${left ? "arrow-icon-left" : "arrow-icon"} ${className}`.trim()}
     >
       {left ? (
         <>
